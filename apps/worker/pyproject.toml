@@ -1,0 +1,30 @@
+[project]
+name = "oa-worker"
+version = "0.1.0"
+description = "Celery workers, sandbox orchestrator, warm pool manager, result parsers."
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "oa-engine",
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+    "docker>=7.1",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/oa_worker"]

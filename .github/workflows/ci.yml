@@ -1,0 +1,215 @@
+name: ci
+
+# Cancels superseded runs on the same branch: a push while CI is mid-run makes
+# the older run's results meaningless, and wasting a runner on it is worse than
+# losing it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (lint, types, tests)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: uv sync --all-packages --locked
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check --line-length 100 .
+
+      - name: mypy strict
+        run: uv run mypy apps/api/src apps/worker/src engine/src
+
+      # Coverage gate. The threshold lives in pyproject.toml, so lowering it is
+      # a reviewed diff rather than a silent CI edit.
+      - name: pytest with coverage
+        run: uv run pytest --cov --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python
+          path: coverage.xml
+          retention-days: 7
+
+  frontend:
+    name: frontend (lint, types, tests, build)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: TypeScript strict
+        run: npm run typecheck
+
+      - name: Vitest
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+  # The spec-level security tests run on every PR without Docker, because they
+  # assert on the container spec we construct. That is the layer that catches a
+  # regression in what we ask for. The live adversarial tests need a real daemon
+  # and run in the nightly job below.
+  security-spec:
+    name: security (container spec)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --all-packages --locked
+
+      - name: Security envelope and payload isolation (runc)
+        run: uv run pytest sandbox/tests -v
+        env:
+          SANDBOX_RUNTIME: runc
+
+      - name: Security envelope and payload isolation (runsc)
+        # Same assertions under the production configuration. The
+        # identical-controls test proves the envelope does not vary, so a
+        # difference here is a genuine bug rather than a fixture mismatch.
+        run: uv run pytest sandbox/tests -v
+        env:
+          SANDBOX_RUNTIME: runsc
+
+      - name: GVisor tests skip under runc
+        run: |
+          if uv run pytest sandbox/tests -m gvisor -q 2>&1 | grep -q "no tests ran"; then
+            echo "expected gVisor tests to be selected, not deselected"; exit 1
+          fi
+          uv run pytest sandbox/tests -m gvisor -q | grep -q "skipped" \
+            && echo "gVisor tests correctly skipped under runc"
+        env:
+          SANDBOX_RUNTIME: runc
+
+  # Nightly, and on manual dispatch: needs a Linux runner with the gVisor
+  # runtime. Covers the fork bomb, memory bomb, network egress, and escape
+  # probes, plus the load test.
+  adversarial:
+    name: adversarial (live sandbox)
+    needs: [backend, frontend]
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gVisor
+        run: |
+          sudo RUNSC_VERSION=20241021.0.0 ./infra/gvisor/install-runsc.sh
+          docker info --format '{{json .Runtimes}}'
+
+      - name: Build sandbox images
+        run: ./sandbox/images/build-all.sh
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --all-packages --locked
+
+      - name: Adversarial suite (single layer, runc)
+        # Runs the whole adversarial suite under plain runc. gVisor-specific
+        # assertions are skipped here and covered by the next job, so a single
+        # misconfiguration cannot make one set of tests silently vanish.
+        run: uv run pytest sandbox/tests -v -m sandbox
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          SANDBOX_RUNTIME: runc
+
+      - name: GVisor second layer (two layers, runsc)
+        run: uv run pytest sandbox/tests -v -m gvisor
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          SANDBOX_RUNTIME: runsc
+
+      - name: Assert the production guard accepts the hardened config
+        run: |
+          uv run python -c "
+          from oa_engine.platform.config import get_settings
+          from oa_worker.sandbox.spec import assert_gvisor_is_second_layer
+          assert_gvisor_is_second_layer(sandbox_runtime=get_settings().sandbox_runtime)
+          print('gVisor guard satisfied')
+          "
+        env:
+          SANDBOX_RUNTIME: runsc
+
+      - name: Load test
+        run: uv run pytest sandbox/tests -v -m loadtest
+        env:
+          DOCKER_HOST: unix:///var/run/docker.sock
+          SANDBOX_RUNTIME: runsc
+
+      - name: Container forensics
+        # Fails the job if any sandbox container survived the test run. A
+        # leftover container is a live hostile process on the runner.
+        run: |
+          leftovers=$(docker ps -aq --filter label=oa.managed=true)
+          if [ -n "$leftovers" ]; then
+            echo "::error::containers leaked after the adversarial suite:"
+            docker ps -a --filter label=oa.managed=true
+            exit 1
+          fi
+          echo "no leaked sandbox containers"
+
+  compose:
+    name: compose (config validity)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the compose file
+        run: docker compose config -q
+      - name: Ensure no secrets are committed
+        run: |
+          if git ls-files | grep -E '(^|/)\.env$' && [ "$(git ls-files | grep -cE '(^|/)\.env$')" -gt 0 ]; then
+            echo "::error::a .env file is committed"
+            exit 1
+          fi
+          if git ls-files | grep -qE '\.(pem|key)$'; then
+            echo "::error::a key file is committed"
+            exit 1
+          fi
+          echo "no committed secrets"

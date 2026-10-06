@@ -1,0 +1,82 @@
+# Worker image: Celery plus the Docker SDK. This is the only image that can
+# reach a container runtime, which is why it is also the only image that must
+# be treated as part of the trusted computing base.
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y libpq5 curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# uv comes from PyPI rather than the ghcr.io image it is published as. The
+# registry pull is a build-time dependency on a second host, and when that host is
+# slow or rate-limiting, every image build hangs on `load metadata` with no error
+# and no progress. PyPI is already required by the next line, so this adds no new
+# dependency -- it removes one. Pinned so a uv release cannot change how the
+# workspace resolves mid-build.
+RUN pip install --no-cache-dir "uv==0.11.28"
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock* ./
+COPY apps/api/pyproject.toml ./apps/api/
+COPY apps/worker/pyproject.toml ./apps/worker/
+COPY engine/pyproject.toml ./engine/
+
+ENV UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# Both packages, deliberately.
+#
+#   oa-worker  the Celery app, the sandbox orchestrator, and the warm pool.
+#   oa-api     only for the SQLAlchemy models and the result-persistence helper.
+#               The worker needs to write a graded result to Postgres; making the
+#               worker push results to the API over HTTP instead would add a
+#               network dependency and a failure mode to the one path that must
+#               not fail.
+#
+# This does not weaken the central security boundary. The worker already holds a
+# Docker socket and creates containers; database write access is a far smaller
+# capability. The boundary that matters is the reverse one -- the API image
+# installs neither oa-worker nor the docker SDK, so the web process still cannot
+# execute a submission.
+#
+# `--frozen` is tried first so CI uses the committed lockfile, with a fallback for
+# a fresh clone that has never had `uv` run locally.
+RUN uv sync --frozen --no-dev --no-install-project --package oa-worker --package oa-api \
+ || uv sync --no-dev --no-install-project --package oa-worker --package oa-api
+
+COPY apps/worker/src ./apps/worker/src
+COPY apps/api/src ./apps/api/src
+COPY engine/src ./engine/src
+COPY sandbox/runners ./sandbox/runners
+
+# The worker needs the Docker CLI to answer `docker info` in the gVisor probe
+# and to build sandbox images at startup when they are absent. Cheap, and it
+# makes the failure mode "missing CLI" rather than a confusing socket error.
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y docker.io \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONPATH=/app/apps/worker/src:/app/apps/api/src:/app/engine/src
+
+RUN useradd --create-home --uid 10002 --shell /usr/sbin/nologin worker
+# The worker needs to talk to the Docker daemon over a socket, which requires
+# membership of the socket's group. It does NOT need root, and it is not root.
+USER 10002
+
+# No --concurrency flag. It is set in celery_app.conf from WORKER_CONCURRENCY, and
+# hardcoding it on the command line silently overrides the environment variable --
+# which is exactly what happened: the stack looked configured for 2 workers while
+# actually running 8, each with its own warm pool, for 96 idle containers.
+#
+# One worker process per container is also deliberate. Concurrency controls forked
+# children, and each child owns a warm pool, so raising it multiplies idle
+# containers rather than just adding parallelism.
+CMD ["celery", "-A", "oa_worker.celery_app", "worker", \
+     "--loglevel=INFO", \
+     "--hostname=worker@%h"]

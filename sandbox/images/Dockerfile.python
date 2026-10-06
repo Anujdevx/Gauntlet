@@ -1,0 +1,106 @@
+# Sandbox image for Python and GenAI tasks.
+#
+# Two rules govern this file:
+#
+# 1. No network at runtime. The image is built here, with network, and the
+#    resulting image runs with `network_disabled=True`. Dependencies are baked
+#    in precisely so that grading never needs the network.
+#
+# 2. The non-root user and the grader must be owned by *us*, not the submission.
+#    `sandbox` owns only /workspace; the runner and the hidden tests are
+#    injected later, read-only. A candidate who could write to /runner would be
+#    grading their own homework.
+#
+# Dependency versions are pinned exactly. A grader whose behaviour shifts with a
+# transitive dependency makes grading non-deterministic, which is the one thing
+# this platform promises not to be.
+
+FROM python:3.11-slim-bookworm
+
+ARG RUNSC_VERSION=20241021.0.0
+
+# No PIP_NO_INDEX here. An ENV applies at build time as well as runtime, so it
+# would break the install step below. Offline behaviour at runtime comes from the
+# orchestrator's network_disabled=True, which is a kernel-level guarantee and
+# strictly better than a resolver flag a candidate could override with
+# `pip --index-url`.
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONNOUSERSITE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Runtime libraries only. No compilers: nothing in this image should need to
+# build anything, and a compiler would be an escalation primitive for a
+# candidate who finds a way to invoke it.
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y \
+      libpq5 \
+      sqlite3 \
+ && rm -rf /var/lib/apt/lists/*
+
+# -- dependencies -----------------------------------------------------------
+# Every version is pinned exactly. A grader whose behaviour shifts with a
+# transitive dependency makes grading non-deterministic, which is the single
+# thing this platform promises not to be. There is no lockfile here, so the pins
+# *are* the lockfile.
+#
+# Deliberately ABSENT: torch, sentence-transformers, and the OpenAI/Anthropic
+# clients.
+#
+#   * An embedding model inside the sandbox would add ~2 GB and a large native
+#     attack surface to every image, and it is architecturally misplaced. Embedding
+#     generation happens in the engine (control plane); a RAG challenge that needs
+#     vectors ships a fixture or a deterministic mock. A candidate is never asked
+#     to embed anything.
+#   * Real LLM clients are excluded because they need an API key, and section 5
+#     forbids secrets in a sandbox. RAG challenges assert on retrieval
+#     orchestration, prompt formatting, and context-window handling against
+#     locally mocked endpoints, which is both safer and deterministic.
+#
+# faiss-cpu is present because a candidate implementing a vector index should be
+# able to run it for real; it is ~30 MB rather than ~2 GB.
+RUN pip install --no-cache-dir \
+      "pytest==8.3.4" \
+      "pytest-json-report==1.5.0" \
+      "pytest-timeout==2.3.1" \
+      "pytest-asyncio==0.24.0" \
+      "numpy==2.1.3" \
+      "pydantic==2.9.2" \
+      "httpx==0.27.2" \
+      "requests==2.32.3" \
+      "beautifulsoup4==4.12.3" \
+      "scikit-learn==1.5.2" \
+      "faiss-cpu==1.9.0.post1"
+
+# -- dedicated non-root account --------------------------------------------
+# uid/gid must match SANDBOX_UID / SANDBOX_GID in
+# oa_engine.platform.config, because the orchestrator sets `user:` on every
+# create request. A mismatch surfaces as a container that will not start.
+RUN groupadd --gid 65532 sandbox \
+ && useradd --uid 65532 --gid 65532 --create-home --shell /bin/bash sandbox \
+ && mkdir -p /workspace /grading /runner \
+ && chown sandbox:sandbox /workspace \
+ && chmod 0755 /workspace /grading /runner
+
+# -- runners ----------------------------------------------------------------
+# Owned by root and not writable by the sandbox user: candidate code must not be
+# able to modify the thing that grades it.
+COPY --chown=root:root sandbox/runners/python/ /runner/
+RUN chmod 0755 /runner/*.sh \
+ && chmod 0644 /runner/*.py \
+ && chown -R root:root /runner \
+ && chmod -R go-w /runner
+
+WORKDIR /workspace
+USER 65532:65532
+
+# Default command keeps a pooled container alive without doing any work.
+CMD ["sleep", "infinity"]
+
+HEALTHCHECK NONE
+LABEL oa.sandbox.language="python" \
+      oa.sandbox.runtime="runsc" \
+      oa.sandbox.runsc-version="${RUNSC_VERSION}" \
+      oa.sandbox.grading="deterministic" \
+      oa.sandbox.hidden-tests="grading-only"

@@ -1,0 +1,119 @@
+/**
+ * Global styles and design tokens.
+ *
+ * Tokens are declared for both themes on `:root` and `.dark`, so every component
+ * reads the same variable names and theme switching needs no component changes.
+ * Values are space-separated RGB channels so Tailwind's `<alpha-value>` syntax
+ * works, which is what lets `bg-surface/80` be used for overlays.
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+
+  --surface: 255 255 255;
+  --surface-raised: 249 250 251;
+  --surface-sunken: 243 244 246;
+
+  --content: 17 24 39;
+  --content-muted: 75 85 99;
+  --content-subtle: 107 114 128;
+
+  --edge: 229 231 235;
+
+  /* Verdict colours are distinguishable without relying on hue alone: each is
+     paired with an icon and a text label in the UI, so red/green colour-blind
+     users are not disadvantaged. Contrast against --surface is >= 4.5:1. */
+  --verdict-pass: 21 128 61;
+  --verdict-fail: 185 28 28;
+  --verdict-skip: 146 64 14;
+  --verdict-infra: 107 114 128;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --surface: 10 11 13;
+  --surface-raised: 22 24 28;
+  --surface-sunken: 6 7 8;
+
+  --content: 237 239 241;
+  --content-muted: 156 163 175;
+  --content-subtle: 107 114 128;
+
+  --edge: 39 42 47;
+
+  --verdict-pass: 74 222 128;
+  --verdict-fail: 248 113 113;
+  --verdict-skip: 251 191 36;
+  --verdict-infra: 156 163 175;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface text-content font-sans antialiased;
+  }
+
+  /* Visible focus for keyboard users everywhere, including inside Monaco's
+     shadow DOM, which is why the outline is applied to :focus-visible rather
+     than to specific components. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-content-muted ring-offset-2 ring-offset-surface;
+  }
+
+  /* Respect a reduced-motion preference for every animation, including the
+     streaming cursor. Vestibular triggers are a real accessibility concern and
+     this app animates continuously while a submission runs. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  ::selection {
+    @apply bg-content/20;
+  }
+}
+
+@layer components {
+  /* Scrollbars in the terminal and test panels. Styled explicitly because the
+     default macOS overlay scrollbars disappear during streaming, which makes
+     a live log look frozen. */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--edge)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--edge));
+    border-radius: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--content-subtle));
+  }
+}

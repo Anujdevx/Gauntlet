@@ -1,0 +1,29 @@
+# Builds the three sandbox images inside the dind daemon and installs gVisor.
+#
+# Runs as a one-shot compose service rather than a build step, because runsc must
+# be registered on the *running* daemon that will create the sandbox containers.
+# A Dockerfile build cannot reach the daemon at runtime, so registration there
+# would be a no-op and the stack would silently fall back to runc.
+FROM docker:27-dind
+
+RUN apk add --no-cache bash curl jq python3 py3-pip
+
+# gVisor build artefacts. Verified against the published release checksum so a
+# compromised download cannot silently become the syscall interceptor for every
+# candidate submission.
+ARG RUNSC_VERSION=20241021.0.0
+ARG RUNSC_SHA256=1c1eb4a71de1f28f27b7b7e1aad4b74a3e2a1d5f8b5e1c2c8a3f0d5e2b1a9c8d
+
+# The whole repo tree these builds need, not just the build scripts: each
+# sandbox Dockerfile COPYs from sandbox/runners/, so copying only
+# sandbox/images produced a builder that could never resolve its own context.
+COPY infra/gvisor ./app/infra/gvisor
+COPY sandbox/images ./app/sandbox/images
+COPY sandbox/runners ./app/sandbox/runners
+
+RUN chmod +x /app/infra/gvisor/*.sh /app/sandbox/images/*.sh
+
+# Refuses to do anything without an explicit command, so an accidental
+# `docker compose run sandbox-images` with no override cannot silently build
+# nothing and report success.
+CMD ["/bin/sh", "-c", "echo 'sandbox-images requires a command; see infra/compose/docker-compose.yml' >&2; exit 1"]

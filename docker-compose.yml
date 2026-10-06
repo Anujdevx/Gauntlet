@@ -1,0 +1,253 @@
+# Adaptive Technical Assessment Simulator -- local development stack.
+#
+# Design notes that matter when reading this file:
+#
+#  * The worker container runs the *outer* Docker daemon (docker:dind) and talks
+#    to it over the privileged socket. The API deliberately does NOT. That
+#    separation is the whole security architecture: a web-server compromise
+#    yields no ability to create containers.
+#
+#  * dind requires the container to be privileged. That is a real, contained
+#    risk: it is scoped to the worker's own dind daemon, which only ever holds
+#    sandbox images, and no production secret is mounted into it. A production
+#    deployment should replace this with a dedicated, socket-proxied runner
+#    fleet -- see docs/security/sandbox.md.
+#
+#  * gVisor is installed inside the dind daemon by an init step, because runsc
+#    must be registered on the daemon that will run the sandboxes, and that
+#    daemon only exists at runtime.
+
+name: oa-prep
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-api-env: &api-env
+  ENVIRONMENT: ${ENVIRONMENT:-local}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_JSON: ${LOG_JSON:-true}
+  POSTGRES_DSN: ${POSTGRES_DSN:-postgresql+asyncpg://oa:oa_dev_password@postgres:5432/oa}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://redis:6379/0}
+  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://redis:6379/1}
+  QUEUE_NAME: ${QUEUE_NAME:-sandbox.execute}
+  WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oa_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-oa}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory. Creates pgvector, which the image
+      # ships but does not enable.
+      - ./infra/compose/postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # ``pg_isready`` alone would report healthy before pgvector has finished
+      # creating its extension, so the check asserts the extension exists.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oa} -d ${POSTGRES_DB:-oa} && psql -U ${POSTGRES_USER:-oa} -d ${POSTGRES_DB:-oa} -tAc \"select 1 from pg_extension where extname='vector'\" | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks: [oa-net]
+    logging: *default-logging
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    # appendonly so a queued submission survives a broker restart; losing
+    # submissions to a broker bounce is a candidate-visible bug.
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [oa-net]
+    logging: *default-logging
+
+  # --- API: control plane. No Docker socket, no code execution. ----------
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    restart: unless-stopped
+    environment:
+      <<: *api-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Migrations run in the entrypoint, not here. A `command:` override folded
+    # across YAML lines mangles multi-line arguments, and an entrypoint script is
+    # readable and debuggable in a way an inline shell string is not.
+    healthcheck:
+      # Liveness, not readiness: /health must answer even with a dependency
+      # down, so restarting the API cannot fix a database outage.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [oa-net]
+    logging: *default-logging
+
+  # --- Worker: the only service with a Docker socket. --------------------
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      dind:
+        condition: service_healthy
+    environment:
+      <<: *api-env
+      # Points at the dind daemon, which is the daemon that will create sandboxes.
+      DOCKER_HOST: tcp://dind:2375
+      # Kept deliberately small. The warm pool is PER FORKED CHILD, so the real
+      # container count is:
+      #
+      #     concurrency x pool_size_per_language x 3 languages
+      #
+      #     8 x 4 x 3 = 96 containers   <- exhausts a laptop's Docker Desktop
+      #     2 x 2 x 3 = 12 containers   <- comfortable for local development
+      #
+      # Every one of those is a running container with a 256 MiB cgroup limit, and
+      # `docker ps` becomes unreadable well before memory does. Production scales
+      # by adding *machines*, so it can afford a larger product here.
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      POOL_SIZE_PER_LANGUAGE: ${POOL_SIZE_PER_LANGUAGE:-2}
+      # runc (single layer) by default so the stack runs on macOS and Windows.
+      # Set SANDBOX_RUNTIME=runsc in production; the worker refuses to start if
+      # the configured runtime is not registered on the dind daemon.
+      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-runc}
+      IMAGE_PYTHON: ${IMAGE_PYTHON:-oa/sandbox-python:1.0.0}
+      IMAGE_REACT: ${IMAGE_REACT:-oa/sandbox-react:1.0.0}
+      IMAGE_SQL: ${IMAGE_SQL:-oa/sandbox-sql:1.0.0}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Only the worker gets the socket. Deliberately not shared with `api`.
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - sandbox-images:/var/lib/oa/sandbox-images
+    networks: [oa-net]
+    logging: *default-logging
+
+  # --- Docker-in-Docker: runs the sandbox containers themselves. ----------
+  dind:
+    image: docker:27-dind
+    restart: unless-stopped
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      DOCKER_HOST: tcp://0.0.0.0:2375
+      # gVisor is installed and registered by the init container below. The
+      # default must match SANDBOX_RUNTIME, otherwise a runsc-configured worker
+      # would have to name the runtime explicitly on every create request. The
+      # orchestrator always names it explicitly, so this is belt-and-braces.
+      DOCKER_DEFAULT_RUNTIME: ${SANDBOX_RUNTIME:-runc}
+    volumes:
+      - sandbox-images:/var/lib/oa/sandbox-images
+      - dind-storage:/var/lib/docker
+    ports:
+      # Published on loopback only, and deliberately so. This exposes an
+      # unauthenticated Docker API that is effectively root on the nested daemon,
+      # which is exactly why it must never bind to 0.0.0.0 and why this stack
+      # must not be run on a host you do not control.
+      #
+      # It exists so the sandbox test suite can run from the host against the
+      # same daemon the worker uses:
+      #   DOCKER_HOST=tcp://127.0.0.1:2375 make test
+      # Without it, `pytest -m sandbox` can only run inside the worker container.
+      - "127.0.0.1:${DIND_PORT:-2375}:2375"
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+    networks: [oa-net]
+    logging: *default-logging
+
+  # One-shot: install runsc into the dind image and bake the sandbox images.
+  # Runs to completion, then exits; `docker compose up -d` depends on its
+  # success, so a missing gVisor fails the stack instead of silently
+  # degrading every sandbox to runc.
+  sandbox-images:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.sandbox-builder
+    restart: "no"
+    depends_on:
+      dind:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: tcp://dind:2375
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - sandbox-images:/var/lib/oa/sandbox-images
+    # register-runsc.sh exits 0 when gVisor is merely absent (macOS cannot run
+    # it) so image builds still work; it exits non-zero when runsc is advertised
+    # but broken, or when REGISTER_REQUIRED=true on Linux. The orchestrator is the
+    # component that refuses to execute a sandbox without gVisor.
+    command: >
+      sh -c "/app/infra/gvisor/register-runsc.sh && /app/sandbox/images/build-all.sh"
+    networks: [oa-net]
+    logging: *default-logging
+
+  # --- Frontend -----------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+      target: runner
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+      NEXT_PUBLIC_WS_BASE_URL: ${NEXT_PUBLIC_WS_BASE_URL:-ws://localhost:8000}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [oa-net]
+    logging: *default-logging
+
+volumes:
+  postgres-data:
+  redis-data:
+  dind-storage:
+  # Named so the same image content is reused across `compose down` cycles;
+  # deleting it forces a full rebuild of the three sandbox images.
+  sandbox-images:
+
+networks:
+  oa-net:
+    driver: bridge

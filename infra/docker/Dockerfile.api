@@ -1,0 +1,68 @@
+# Control-plane image: FastAPI only. Deliberately has no Docker SDK installed,
+# so a compromise of this process cannot create a container even if an attacker
+# reaches for it. "Cannot" here is enforced by absence of the dependency, not
+# by policy.
+FROM python:3.11-slim-bookworm AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# libpq for asyncpg, curl for the compose healthcheck.
+RUN apt-get update \
+ && apt-get install --no-install-recommends -y libpq5 curl \
+ && rm -rf /var/lib/apt/lists/*
+
+# uv comes from PyPI rather than the ghcr.io image it is published as. The
+# registry pull is a build-time dependency on a second host, and when that host is
+# slow or rate-limiting, every image build hangs on `load metadata` with no error
+# and no progress. PyPI is already required by the next line, so this adds no new
+# dependency -- it removes one. Pinned so a uv release cannot change how the
+# workspace resolves mid-build.
+RUN pip install --no-cache-dir "uv==0.11.28"
+
+WORKDIR /app
+
+# Dependency layer first so source edits do not invalidate the install cache.
+COPY pyproject.toml uv.lock* ./
+COPY apps/api/pyproject.toml ./apps/api/
+COPY apps/worker/pyproject.toml ./apps/worker/
+COPY engine/pyproject.toml ./engine/
+
+ENV UV_PROJECT_ENVIRONMENT=/usr/local \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+# One --package only: uv rejects the flag twice. oa-api depends on oa-engine, so
+# uv resolves it transitively. This also keeps the dependency graph minimal --
+# the API image never installs the docker SDK or celery, so a compromise of the
+# web process cannot create a container even with arbitrary code execution.
+# The `||` fallback retries without --flocked when uv.lock is absent, which is
+# the case for a fresh clone before anyone has run uv locally.
+RUN uv sync --frozen --no-dev --no-install-project --package oa-api \
+ || uv sync --no-dev --no-install-project --package oa-api
+
+# Alembic lives outside the wheel (it is a tool, not an importable library of
+# ours), so the migration environment is copied in separately. Without this the
+# image cannot migrate itself, and every deploy becomes a hand-run command
+# against a container that is about to be replaced.
+COPY apps/api/alembic.ini ./apps/api/alembic.ini
+COPY apps/api/alembic ./apps/api/alembic
+
+COPY apps/api/src ./apps/api/src
+COPY engine/src ./engine/src
+
+COPY infra/docker/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
+RUN chmod +x /usr/local/bin/api-entrypoint.sh
+
+ENV PYTHONPATH=/app/apps/api/src:/app/engine/src
+
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin api
+USER 10001
+
+EXPOSE 8000
+
+# Bind on all interfaces so compose can publish the port; the container itself
+# has no route to the Docker daemon.
+ENTRYPOINT ["/usr/local/bin/api-entrypoint.sh"]

@@ -1,0 +1,161 @@
+[project]
+name = "oa-prep-platform"
+version = "0.1.0"
+description = "Adaptive Technical Assessment Simulator: zero-trust RCE, deterministic grading, probabilistic skill tracking."
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "structlog>=24.4",
+    "prometheus-client>=0.21",
+    "httpx>=0.27",
+    "redis>=5.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "types-redis>=4.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["apps/api/src/oa_api", "apps/worker/src/oa_worker", "engine/src/oa_engine"]
+
+[tool.uv.workspace]
+members = ["apps/api", "apps/worker", "engine"]
+
+[tool.uv.sources]
+oa-api = { workspace = true }
+oa-worker = { workspace = true }
+oa-engine = { workspace = true }
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["apps", "engine"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # flake8-bugbear
+    "A",         # flake8-builtins
+    "C4",        # flake8-comprehensions
+    "DTZ",       # flake8-datetimez
+    "T20",       # flake8-print
+    "SIM",       # flake8-simplify
+    "RUF",
+    "ASYNC",
+    "S",         # bandit
+    "ANN",       # flake8-annotations
+    "PTH",
+    "TRY",
+    "PL",
+]
+ignore = [
+    "PLR0913",  # too many arguments - the orchestrator control surface is intentionally wide
+    "PLR0912",  # too many branches - containment logic reads better as one explicit function
+    "PLR0915",  # too many statements - same reason
+    "ANN401",  # Any is banned here; use object / pydantic models instead
+    "TRY003",   # long exception messages are the point; these messages are runbooks
+    "TRY300",   # explicit else-return ladders read better than context managers here
+    "PLC0415",  # local imports are deliberate: they break import cycles and defer heavy deps
+    "UP042",    # str+Enum is intentional so values serialise as plain strings over JSON
+    "S108",     # /tmp is the sandbox's entire writable surface; it is named deliberately
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "PLR2004", "ANN", "S105", "S106", "DTZ", "S108"]
+"apps/api/src/oa_api/main.py" = ["S104"]  # 0.0.0.0 in a container is correct; compose maps the port
+"apps/worker/src/oa_worker/sandbox/**" = ["S108"]
+# Operator entrypoints: their whole job is to report to a terminal. The rule
+# exists to stop stray debug prints in request-path code.
+"apps/api/src/oa_api/scripts/**" = ["T201"]
+"apps/worker/src/oa_worker/pool/**" = ["S108"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["oa_api", "oa_worker", "oa_engine"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+mypy_path = ["apps/api/src", "apps/worker/src", "engine/src"]
+
+# Third-party libraries that ship no type information. Silencing them at the
+# module level is honest: we get no checking inside them, but strict checking
+# everywhere else is preserved, which is what actually catches our own bugs.
+[[tool.mypy.overrides]]
+module = [
+    "celery.*",
+    "docker.*",
+    "kombu.*",
+    "redis.*",
+    "uvicorn.*",
+    "prometheus_client.*",
+    "structlog.*",
+]
+ignore_missing_imports = true
+follow_untyped_imports = false
+
+# Celery's @task decorator is untyped, so every task body would be demoted to
+# untyped. The function signatures inside are still checked by us.
+[[tool.mypy.overrides]]
+module = ["oa_worker.celery_app", "oa_worker.tasks.execute"]
+disable_error_code = ["untyped-decorator", "misc"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["apps", "engine", "sandbox/tests"]
+# Explicit rather than relying on the editable-install .pth files. macOS marks
+# files under some synced directories (notably ~/Desktop) with UF_HIDDEN, and
+# CPython's site.py silently skips "hidden" .pth files -- which makes the
+# packages unimportable in a way that looks like a broken install. Listing the
+# source roots here is immune to that, and also makes `pytest` work in an
+# environment where the workspace was never `uv sync`ed at all.
+pythonpath = [
+    "apps/api/src",
+    "apps/worker/src",
+    "engine/src",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "sandbox: requires a live Docker daemon",
+    "gvisor: requires SANDBOX_RUNTIME=runsc; asserts gVisor-specific behaviour",
+    "loadtest: sandbox load and latency measurement; slow and exclusive",
+    "e2e: end-to-end across api + worker + broker",
+]
+filterwarnings = ["error::DeprecationWarning:oa_.*"]
+
+[tool.coverage.run]
+source = ["apps", "engine"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 60
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+]

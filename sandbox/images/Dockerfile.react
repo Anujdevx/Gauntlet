@@ -1,0 +1,79 @@
+# Sandbox image for React / Node tasks.
+#
+# Alpine + Node, not Debian: a smaller image means a faster warm-container start,
+# and cold-start latency is the single biggest consumer of the 2 s budget.
+#
+# Vitest runs with `--reporter=json --outputFile`, and the worker parses that
+# document. Nothing anywhere greps terminal output for a verdict.
+FROM node:22-alpine
+
+ARG RUNSC_VERSION=20241021.0.0
+
+# Build-time environment only.
+#
+# NPM_CONFIG_OFFLINE is deliberately NOT set here. An ENV applies to every later
+# layer, so setting it above the install step makes `npm ci` fail with
+# ENOTCACHED -- the same trap as PIP_NO_INDEX in Dockerfile.python. It is set
+# below the install instead, where it only affects the runtime.
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false
+
+# tini gives us a real PID 1 that reaps, matching the Python image's behaviour
+# so the harness's SIGKILL-to-PID-1 logic is identical across languages.
+RUN apk add --no-cache tini su-exec
+
+WORKDIR /runner
+
+# Dependencies are pinned exactly and installed into /runner so the test runner
+# is available regardless of what the candidate puts in /workspace.
+#
+# `npm ci` requires a lockfile, which is generated on the host by
+# `npm --prefix apps/web install`. Until it exists, fall back to `npm install`
+# with the same exact pins -- `npm ci` is preferred for reproducibility, but a
+# hard dependency on a lockfile would make a fresh clone unable to build, and
+# exact version specs already prevent drift in the direct dependencies.
+COPY sandbox/runners/react/package.json ./package.json
+COPY sandbox/runners/react/package-lock.json* ./package-lock.json
+RUN if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; \
+    else npm install --no-audit --no-fund; fi
+
+RUN addgroup -g 65532 sandbox \
+ && adduser -D -u 65532 -G sandbox sandbox \
+ && mkdir -p /workspace /grading \
+ && chown sandbox:sandbox /workspace \
+ && chmod 0755 /workspace /grading
+
+COPY --chown=root:root sandbox/runners/react/ /runner/
+RUN chown -R root:root /runner \
+ && chmod -R go-w /runner \
+ && chmod 0755 /runner/*.sh
+
+# -- runtime environment ----------------------------------------------------
+# Applied after the install so it cannot affect it. Three groups:
+#
+#   * Determinism: NODE_ENV=test and CI=1 suppress dev-mode behaviour and watch
+#     files, so a grader's result does not depend on how the image was invoked.
+#   * Offline: the container has no network, so an accidental `npm install` from
+#     candidate code should fail fast rather than hang until the wall clock kills
+#     it. This is a usability nicety; the actual containment is the
+#     orchestrator's network_disabled=True, which a candidate cannot override.
+#   * Memory: Node's default heap can exceed a 256 MiB cgroup and get OOM-killed,
+#     which would be reported to the candidate as a resource failure rather than a
+#     real one. Capping the heap below the cgroup limit keeps the two consistent.
+ENV NODE_ENV=test \
+    CI=1 \
+    NPM_CONFIG_OFFLINE=true \
+    NODE_OPTIONS=--max-old-space-size=192
+
+WORKDIR /workspace
+USER 65532:65532
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["sleep", "infinity"]
+
+LABEL oa.sandbox.language="react" \
+      oa.sandbox.runtime="runsc" \
+      oa.sandbox.runsc-version="${RUNSC_VERSION}" \
+      oa.sandbox.grading="deterministic" \
+      oa.sandbox.hidden-tests="grading-only"

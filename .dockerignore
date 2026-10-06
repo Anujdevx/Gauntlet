@@ -1,0 +1,13 @@
+# Build context exclusions.
+#
+# `__pycache__` in sandbox/runners/ would be COPYed into an image and shadow the
+# runner modules with stale bytecode, so the image and the host could disagree
+# about what grades a submission.
+**/__pycache__/
+**/*.pyc
+.git/
+.venv/
+node_modules/
+.env
+*.md
+docs/
