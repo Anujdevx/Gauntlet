@@ -68,7 +68,12 @@ export interface IdeState {
   readonly streamNotice: string | null;
   readonly startedAt: number | null;
   readonly elapsedMs: number;
+  /** Caret position in the active editor, shown in the status bar. 1-based. */
+  readonly cursor: { readonly line: number; readonly column: number };
 
+  readonly setCursor: (line: number, column: number) => void;
+  /** Restore every file to its starter content. */
+  readonly resetFiles: () => void;
   readonly loadChallengeFiles: (files: Readonly<Record<string, string>>) => void;
   readonly updateFile: (path: string, content: string) => void;
   readonly selectFile: (path: string) => void;
@@ -129,6 +134,7 @@ const INITIAL = {
   streamNotice: null,
   startedAt: null,
   elapsedMs: 0,
+  cursor: { line: 1, column: 1 },
 } as const;
 
 export const useIdeStore = create<IdeState>()((set, get) => ({
@@ -160,6 +166,13 @@ export const useIdeStore = create<IdeState>()((set, get) => ({
       elapsedMs: 0,
     });
   },
+
+  setCursor: (line, column) => set({ cursor: { line, column } }),
+
+  resetFiles: () =>
+    set((state) => ({
+      files: state.files.map((file) => ({ ...file, content: file.pristine })),
+    })),
 
   updateFile: (path, content) => {
     set((state) => ({

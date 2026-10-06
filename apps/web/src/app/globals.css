@@ -1,10 +1,10 @@
 /**
- * Global styles and design tokens.
+ * Global styles and design tokens for Gauntlet.
  *
  * Tokens are declared for both themes on `:root` and `.dark`, so every component
  * reads the same variable names and theme switching needs no component changes.
  * Values are space-separated RGB channels so Tailwind's `<alpha-value>` syntax
- * works, which is what lets `bg-surface/80` be used for overlays.
+ * works, which is what lets `bg-surface/80` and `ring-accent/40` be used.
  */
 
 @tailwind base;
@@ -14,66 +14,80 @@
 :root {
   color-scheme: light;
 
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --surface: 255 255 255;
-  --surface-raised: 249 250 251;
-  --surface-sunken: 243 244 246;
+  --surface: 252 252 251;
+  --surface-raised: 255 255 255;
+  --surface-sunken: 244 244 241;
+  --surface-overlay: 255 255 255;
 
-  --content: 17 24 39;
-  --content-muted: 75 85 99;
-  --content-subtle: 107 114 128;
+  --content: 24 24 27;
+  --content-muted: 82 82 91;
+  --content-subtle: 113 113 122;
 
-  --edge: 229 231 235;
+  --edge: 229 229 224;
+  --edge-strong: 208 208 200;
 
-  /* Verdict colours are distinguishable without relying on hue alone: each is
-     paired with an icon and a text label in the UI, so red/green colour-blind
-     users are not disadvantaged. Contrast against --surface is >= 4.5:1. */
-  --verdict-pass: 21 128 61;
-  --verdict-fail: 185 28 28;
-  --verdict-skip: 146 64 14;
-  --verdict-infra: 107 114 128;
+  --accent: 234 88 12;
+  --accent-fg: 255 255 255;
+
+  /* Verdict colours are never the only signal: each is paired with an icon and a
+     text label in the UI, so red/green colour-blind users are not disadvantaged.
+     Contrast against --surface is >= 4.5:1 in both themes. */
+  --verdict-pass: 4 120 87;
+  --verdict-fail: 190 18 60;
+  --verdict-skip: 180 83 9;
+  --verdict-infra: 100 116 139;
 }
 
 .dark {
   color-scheme: dark;
 
-  --surface: 10 11 13;
-  --surface-raised: 22 24 28;
-  --surface-sunken: 6 7 8;
+  --surface: 11 11 14;
+  --surface-raised: 19 19 24;
+  --surface-sunken: 8 8 10;
+  --surface-overlay: 27 27 34;
 
-  --content: 237 239 241;
-  --content-muted: 156 163 175;
-  --content-subtle: 107 114 128;
+  --content: 244 244 245;
+  --content-muted: 161 161 170;
+  --content-subtle: 128 128 138;
 
-  --edge: 39 42 47;
+  --edge: 38 38 47;
+  --edge-strong: 58 58 70;
 
-  --verdict-pass: 74 222 128;
-  --verdict-fail: 248 113 113;
+  --accent: 255 122 41;
+  --accent-fg: 22 10 3;
+
+  --verdict-pass: 52 211 153;
+  --verdict-fail: 251 113 133;
   --verdict-skip: 251 191 36;
-  --verdict-infra: 156 163 175;
+  --verdict-infra: 148 163 184;
 }
 
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
   }
 
   body {
     @apply bg-surface text-content font-sans antialiased;
+    font-feature-settings: 'cv11', 'ss01';
   }
 
-  /* Visible focus for keyboard users everywhere, including inside Monaco's
-     shadow DOM, which is why the outline is applied to :focus-visible rather
-     than to specific components. */
+  /* Visible focus for keyboard users everywhere, including inside Monaco. */
   :focus-visible {
-    @apply outline-none ring-2 ring-content-muted ring-offset-2 ring-offset-surface;
+    @apply outline-none ring-2 ring-accent/70 ring-offset-2 ring-offset-surface;
   }
 
-  /* Respect a reduced-motion preference for every animation, including the
-     streaming cursor. Vestibular triggers are a real accessibility concern and
-     this app animates continuously while a submission runs. */
+  /* Inputs show their own accent border; a double ring would be noisy. */
+  input:focus-visible,
+  textarea:focus-visible {
+    @apply ring-accent/40 ring-offset-0 border-accent;
+  }
+
+  /* Respect a reduced-motion preference for every animation. */
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -86,34 +100,84 @@
   }
 
   ::selection {
-    @apply bg-content/20;
+    @apply bg-accent/25;
   }
 }
 
 @layer components {
-  /* Scrollbars in the terminal and test panels. Styled explicitly because the
-     default macOS overlay scrollbars disappear during streaming, which makes
+  /* Thin scrollbars: macOS overlay scrollbars vanish during streaming, which makes
      a live log look frozen. */
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: rgb(var(--edge)) transparent;
+    scrollbar-color: rgb(var(--edge-strong)) transparent;
   }
-
   .scrollbar-thin::-webkit-scrollbar {
     width: 8px;
     height: 8px;
   }
-
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
-
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgb(var(--edge));
+    background-color: rgb(var(--edge-strong));
     border-radius: 4px;
   }
-
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: rgb(var(--content-subtle));
+  }
+
+  /* Faint engineering-paper grid used behind hero sections. */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgb(var(--edge) / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(var(--edge) / 0.55) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 30%, transparent 75%);
+  }
+
+  .text-gradient {
+    background-image: linear-gradient(
+      100deg,
+      rgb(var(--accent)) 0%,
+      rgb(255 176 64) 55%,
+      rgb(var(--accent)) 100%
+    );
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .glass {
+    background-color: rgb(var(--surface) / 0.72);
+    backdrop-filter: blur(14px) saturate(160%);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+  }
+
+  /* Subtle lift on interactive cards. */
+  .card-lift {
+    transition:
+      transform 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+  .card-lift:hover {
+    transform: translateY(-2px);
+    border-color: rgb(var(--accent) / 0.5);
+    box-shadow: 0 10px 30px -14px rgb(var(--accent) / 0.35);
+  }
+
+  /* Skeleton shimmer for loading states. */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      rgb(var(--surface-sunken)) 25%,
+      rgb(var(--edge)) 50%,
+      rgb(var(--surface-sunken)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+    border-radius: 0.5rem;
   }
 }

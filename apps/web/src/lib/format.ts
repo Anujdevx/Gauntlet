@@ -98,7 +98,6 @@ export function sanitizeSingleLine(text: string, maxLength = 200): string {
 /* -------------------------------------------------------------------------- */
 
 const MS_PER_SECOND = 1_000;
-const MS_PER_MINUTE = 60 * MS_PER_SECOND;
 
 /**
  * Human duration from milliseconds.

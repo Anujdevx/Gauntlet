@@ -22,7 +22,7 @@ export interface User {
 }
 
 /** Languages the runner can execute. Determines the editor's language mode. */
-export type ChallengeLanguage = 'python' | 'react' | 'sql';
+export type ChallengeLanguage = 'python' | 'react' | 'sql' | 'java';
 
 /** Editorial difficulty label. Display-only: real difficulty is inferred from mastery. */
 export type ChallengeDifficulty = 'easy' | 'medium' | 'hard';
@@ -76,7 +76,8 @@ export interface SkillNode {
   /** Posterior mastery in [0, 1]. */
   readonly mastery: number;
   readonly attempts: number;
-  readonly last_seen: string | null;
+  readonly correct_attempts: number;
+  readonly last_seen_at: string | null;
 }
 
 /** Request bodies. Grouped so a malformed call site is a type error. */

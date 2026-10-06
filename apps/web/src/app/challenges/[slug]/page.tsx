@@ -13,18 +13,22 @@
  * one, so a candidate who mashes Run ends up with exactly one socket rather than
  * one per press.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, CirclePlay, Send, ServerCrash } from 'lucide-react';
+import { ChevronLeft, CirclePlay, PanelLeft, Send, ServerCrash, Timer } from 'lucide-react';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
+import { Kbd } from '@/components/ui/Kbd';
 import { Spinner } from '@/components/ui/Spinner';
 import { IdeLayout } from '@/components/ide/IdeLayout';
 import { errorMessage, createSubmission, fetchChallenge, isApiError } from '@/lib/api';
+import { DIFFICULTY_META, LANGUAGE_META } from '@/lib/challenge-meta';
+import { cn } from '@/lib/cn';
 import { formatDuration, sanitizeSingleLine } from '@/lib/format';
+import { RUN_EVENT, SUBMIT_EVENT, TOGGLE_SIDEBAR_EVENT } from '@/lib/shortcuts';
 import { useExecutionStream } from '@/hooks/useExecutionStream';
 import { useResource } from '@/hooks/useResource';
 import type { Resource } from '@/hooks/useResource';
@@ -60,10 +64,14 @@ function ChallengeWorkspace({ resource }: ChallengeWorkspaceProps): JSX.Element 
   const beginRun = useIdeStore((store) => store.beginRun);
   const reset = useIdeStore((store) => store.reset);
   const tickTimer = useIdeStore((store) => store.tickTimer);
-  const elapsedMs = useIdeStore((store) => store.elapsedMs);
   const connection = useIdeStore((store) => store.connection);
   const files = useIdeStore((store) => store.files);
   const mode = useIdeStore((store) => store.mode);
+
+  // Time on task, independent of the per-run timer in the store.
+  const sessionStart = useRef(Date.now());
+  const [sessionMs, setSessionMs] = useState(0);
+  const [draftRestored, setDraftRestored] = useState(false);
 
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -82,6 +90,10 @@ function ChallengeWorkspace({ resource }: ChallengeWorkspaceProps): JSX.Element 
       return;
     }
     loadChallengeFiles(challenge.starter_files);
+    const restored = restoreDraft(challenge.slug);
+    if (restored) {
+      setDraftRestored(true);
+    }
     return () => {
       stream.cancel();
       reset();
@@ -157,10 +169,65 @@ function ChallengeWorkspace({ resource }: ChallengeWorkspaceProps): JSX.Element 
     [beginRun, challenge, files, stream],
   );
 
+  // Latest `startRun` for the shortcut listeners, which are registered once.
+  const startRunRef = useRef(startRun);
+  startRunRef.current = startRun;
+
+  useEffect(() => {
+    sessionStart.current = Date.now();
+    const timer = setInterval(() => setSessionMs(Date.now() - sessionStart.current), TIMER_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [challenge]);
+
+  useEffect(() => {
+    if (!draftRestored) return;
+    const timer = setTimeout(() => setDraftRestored(false), 4000);
+    return () => clearTimeout(timer);
+  }, [draftRestored]);
+
+  // Run / Submit from the editor, the palette, or a bare key combo. Monaco handles
+  // the combo itself when focused (and marks the event handled), so the window
+  // listener ignores `defaultPrevented` events to avoid firing twice.
+  useEffect(() => {
+    const run = (): void => void startRunRef.current('run');
+    const submit = (): void => void startRunRef.current('submit');
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || !(event.metaKey || event.ctrlKey) || event.key !== 'Enter') return;
+      event.preventDefault();
+      if (event.shiftKey) submit();
+      else run();
+    };
+    window.addEventListener(RUN_EVENT, run);
+    window.addEventListener(SUBMIT_EVENT, submit);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener(RUN_EVENT, run);
+      window.removeEventListener(SUBMIT_EVENT, submit);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  // Autosave the candidate's edits so a refresh or an accidental navigation never
+  // costs them their work. Debounced; only differences from the starter are kept.
+  useEffect(() => {
+    if (challenge === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = useIdeStore.subscribe((state, previous) => {
+      if (state.files === previous.files) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => saveDraft(challenge.slug, state.files), 400);
+    });
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [challenge]);
+
   if (state === 'loading') {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Spinner label="Loading challenge" />
+      <div className="flex flex-1 flex-col gap-3 p-6" role="status" aria-label="Loading challenge">
+        <div className="skeleton h-10 w-full" />
+        <div className="skeleton flex-1" />
       </div>
     );
   }
@@ -173,19 +240,41 @@ function ChallengeWorkspace({ resource }: ChallengeWorkspaceProps): JSX.Element 
     return <LoadFailure error={new Error('No challenge returned.')} onRetry={reload} />;
   }
 
+  const lang = LANGUAGE_META[challenge.language];
+  const diff = DIFFICULTY_META[challenge.difficulty];
+
   const toolbar = (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-edge bg-surface-raised px-3 py-2">
       <Link
         href="/challenges"
-        className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs text-content-muted hover:bg-surface-sunken hover:text-content"
+        className="inline-flex items-center gap-0.5 rounded-md py-1 pl-1 pr-2 text-xs text-content-muted transition-colors hover:bg-surface-overlay hover:text-content"
       >
-        <ArrowLeft aria-hidden className="size-3.5" />
-        All challenges
+        <ChevronLeft aria-hidden className="size-4" />
+        Challenges
       </Link>
 
-      <h1 className="ml-1 min-w-0 truncate text-sm font-semibold">
-        {sanitizeSingleLine(challenge.title, 100)}
-      </h1>
+      <span aria-hidden className="h-4 w-px bg-edge-strong" />
+
+      <span
+        aria-hidden
+        className="inline-flex h-6 min-w-6 items-center justify-center rounded-md px-1.5 font-mono text-[10px] font-bold"
+        style={{
+          color: lang.color,
+          backgroundColor: `color-mix(in srgb, ${lang.color} 15%, transparent)`,
+        }}
+      >
+        {lang.glyph}
+      </span>
+      <h1 className="min-w-0 truncate text-sm font-semibold">{sanitizeSingleLine(challenge.title, 100)}</h1>
+      <span className={cn('hidden text-xs font-medium capitalize sm:inline', diff.text)}>
+        {challenge.difficulty}
+      </span>
+
+      {draftRestored ? (
+        <span role="status" className="animate-fade-up rounded-full bg-accent/15 px-2.5 py-0.5 text-[11px] font-medium text-accent">
+          Draft restored
+        </span>
+      ) : null}
 
       {submitError !== null ? (
         <p role="alert" className="text-xs text-verdict-fail">
@@ -194,27 +283,37 @@ function ChallengeWorkspace({ resource }: ChallengeWorkspaceProps): JSX.Element 
       ) : null}
 
       <div className="ml-auto flex items-center gap-2">
-        {/*
-          `aria-live="off"` is deliberate: a per-second timer announcement would
-          make a screen reader unusable for the duration of a run. The value is
-          readable on demand and announced only when it settles.
-        */}
+        {/* `aria-live="off"`: a per-second announcement would make a screen reader
+            unusable. The value is readable on demand. */}
         <span
           aria-live="off"
-          className="rounded border border-edge bg-surface px-2 py-1 font-mono text-xs tabular-nums text-content-muted"
+          title="Time on this challenge"
+          className="hidden items-center gap-1.5 rounded-lg border border-edge bg-surface px-2.5 py-1.5 font-mono text-xs tabular-nums text-content-muted sm:inline-flex"
         >
-          <span className="sr-only">Elapsed time </span>
-          {formatDuration(elapsedMs)}
+          <Timer aria-hidden className="size-3.5 text-content-subtle" />
+          <span className="sr-only">Time on task </span>
+          {formatDuration(sessionMs)}
         </span>
+
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event(TOGGLE_SIDEBAR_EVENT))}
+          title="Toggle task panel"
+          aria-label="Toggle task panel"
+          className="hidden size-8 items-center justify-center rounded-lg text-content-muted transition-colors hover:bg-surface-overlay hover:text-content lg:inline-flex"
+        >
+          <PanelLeft aria-hidden className="size-4" />
+        </button>
 
         <Button
           size="sm"
           disabled={busy}
           onClick={() => void startRun('run')}
-          title="Run against the visible checks without recording the attempt"
+          title="Execute your code and see its output. Not graded, not recorded"
         >
           {busy && mode === 'run' ? <Spinner /> : <CirclePlay aria-hidden className="size-3.5" />}
           Run
+          <Kbd keys={['mod', 'Enter']} className="ml-1 hidden md:inline-flex" />
         </Button>
 
         <Button
@@ -222,7 +321,7 @@ function ChallengeWorkspace({ resource }: ChallengeWorkspaceProps): JSX.Element 
           variant="primary"
           disabled={busy}
           onClick={() => void startRun('submit')}
-          title="Record this attempt and update your skill profile"
+          title="Grade against the hidden tests and record the attempt"
         >
           {busy && mode === 'submit' ? <Spinner /> : <Send aria-hidden className="size-3.5" />}
           Submit
@@ -273,4 +372,48 @@ function LoadFailure({ error, onRetry }: { readonly error: unknown; readonly onR
       </Card>
     </div>
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Draft persistence                                                           */
+/* -------------------------------------------------------------------------- */
+
+const draftKey = (slug: string): string => `gauntlet:draft:${slug}`;
+
+/** Re-apply saved edits on top of the freshly loaded starter files. */
+function restoreDraft(slug: string): boolean {
+  try {
+    const raw = localStorage.getItem(draftKey(slug));
+    if (raw === null) return false;
+    const draft: unknown = JSON.parse(raw);
+    if (typeof draft !== 'object' || draft === null) return false;
+    const { files, updateFile } = useIdeStore.getState();
+    let applied = false;
+    for (const [path, content] of Object.entries(draft)) {
+      // Only paths that still exist: a stale draft must not resurrect removed files.
+      if (typeof content === 'string' && files.some((file) => file.path === path)) {
+        updateFile(path, content);
+        applied = true;
+      }
+    }
+    return applied;
+  } catch {
+    return false;
+  }
+}
+
+function saveDraft(
+  slug: string,
+  files: readonly { readonly path: string; readonly content: string; readonly pristine: string }[],
+): void {
+  try {
+    const changed: Record<string, string> = {};
+    for (const file of files) {
+      if (file.content !== file.pristine) changed[file.path] = file.content;
+    }
+    if (Object.keys(changed).length === 0) localStorage.removeItem(draftKey(slug));
+    else localStorage.setItem(draftKey(slug), JSON.stringify(changed));
+  } catch {
+    /* Blocked or full storage: autosave is a convenience, never a requirement. */
+  }
 }

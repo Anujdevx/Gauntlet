@@ -347,9 +347,8 @@ export function FileExplorer(): JSX.Element {
                 nodeRefs.current.set(row.path, element);
               }
             }}
-            {...(row.kind === 'dir'
-              ? { 'aria-expanded': row.expanded }
-              : { 'aria-selected': isActive })}
+            aria-selected={isActive}
+            {...(row.kind === 'dir' ? { 'aria-expanded': row.expanded } : {})}
             aria-level={row.level}
             aria-setsize={row.setSize}
             aria-posinset={row.positionInSet}

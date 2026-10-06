@@ -15,6 +15,7 @@
 import { apiBaseUrl, wsBaseUrl } from '@/lib/env';
 import type {
   ApiErrorBody,
+  ChallengeDetail,
   ChallengeDetailResponse,
   ChallengeListResponse,
   CreateSubmissionInput,
@@ -23,6 +24,7 @@ import type {
   SkillsResponse,
   SubmissionAccepted,
   SubmissionStatusResponse,
+  User,
   UserResponse,
   ValidationIssue,
 } from '@/types/api';
@@ -296,12 +298,18 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 /* Auth                                                                        */
 /* -------------------------------------------------------------------------- */
 
-export function signup(input: SignupInput): Promise<UserResponse> {
-  return request<UserResponse>('/api/v1/auth/signup', { method: 'POST', body: input });
+/**
+ * `signup` and `login` answer with the bare user, while `/auth/me` wraps it as
+ * `{ user, expires_at }`. Normalising here keeps the store on one shape.
+ */
+export async function signup(input: SignupInput): Promise<UserResponse> {
+  const user = await request<User>('/api/v1/auth/signup', { method: 'POST', body: input });
+  return { user };
 }
 
-export function login(input: Credentials): Promise<UserResponse> {
-  return request<UserResponse>('/api/v1/auth/login', { method: 'POST', body: input });
+export async function login(input: Credentials): Promise<UserResponse> {
+  const user = await request<User>('/api/v1/auth/login', { method: 'POST', body: input });
+  return { user };
 }
 
 export function logout(): Promise<void> {
@@ -333,11 +341,14 @@ export function fetchChallenges(signal?: AbortSignal): Promise<ChallengeListResp
 }
 
 /** `slug` is URL-encoded: slugs are API-supplied and must never be interpolated raw. */
-export function fetchChallenge(slug: string, signal?: AbortSignal): Promise<ChallengeDetailResponse> {
-  return request<ChallengeDetailResponse>(
+export async function fetchChallenge(slug: string, signal?: AbortSignal): Promise<ChallengeDetail> {
+  // The API wraps single objects in `{ challenge }` so fields can be added later
+  // without a breaking change; callers want the challenge itself.
+  const response = await request<ChallengeDetailResponse>(
     `/api/v1/challenges/${encodeURIComponent(slug)}`,
     signal === undefined ? {} : { signal },
   );
+  return response.challenge;
 }
 
 /* -------------------------------------------------------------------------- */

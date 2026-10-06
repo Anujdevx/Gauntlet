@@ -15,11 +15,12 @@
  */
 import { Suspense, useId, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { CircleCheck } from 'lucide-react';
 import type { FormEvent as ReactFormEvent } from 'react';
 
 import { AppShell } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
+import { LogoMark } from '@/components/brand/Logo';
 import { Spinner } from '@/components/ui/Spinner';
 import { useSessionStore } from '@/store/session';
 
@@ -77,19 +78,46 @@ function LoginForm(): JSX.Element {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col justify-center px-4 py-12">
-      <Card>
-        <CardHeader>
-          <CardTitle>{isSignUp ? 'Create an account' : 'Sign in'}</CardTitle>
-          <CardDescription>
+    <div className="mx-auto grid w-full max-w-5xl flex-1 items-center gap-12 px-6 py-12 lg:grid-cols-2 lg:py-20">
+      <aside className="relative hidden lg:block">
+        <div
+          aria-hidden
+          className="absolute -left-16 -top-10 size-72 rounded-full bg-accent/15 blur-[90px]"
+        />
+        <div className="relative">
+          <LogoMark className="size-12" />
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight">
+            Find out what you
+            <br />
+            <span className="text-gradient">actually know.</span>
+          </h1>
+          <ul className="mt-8 space-y-4 text-sm text-content-muted">
+            {[
+              'Hidden unit tests give a deterministic verdict, never an AI opinion.',
+              'Every run is isolated in a single-use, network-free container.',
+              'Every attempt is recorded against the skills it exercises.',
+            ].map((line) => (
+              <li key={line} className="flex gap-3">
+                <CircleCheck aria-hidden className="mt-0.5 size-4 shrink-0 text-accent" />
+                {line}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </aside>
+
+      <div className="relative w-full max-w-md justify-self-center lg:justify-self-end">
+        <div className="rounded-panel border border-edge-strong bg-surface-raised p-7 shadow-pop">
+          <h2 className="text-xl font-semibold tracking-tight">
+            {isSignUp ? 'Create your account' : 'Welcome back'}
+          </h2>
+          <p className="mt-1 text-sm text-content-muted">
             {isSignUp
               ? 'An account lets the skill matrix track what you have demonstrated.'
-              : 'Sign in to continue an assessment.'}
-          </CardDescription>
-        </CardHeader>
+              : 'Sign in to continue where you left off.'}
+          </p>
 
-        <CardContent>
-          <form noValidate onSubmit={(event) => void onSubmit(event)} className="space-y-4">
+          <form noValidate onSubmit={(event) => void onSubmit(event)} className="mt-6 space-y-4">
             {isSignUp ? (
               <Field
                 id={`${formId}-name`}
@@ -126,32 +154,32 @@ function LoginForm(): JSX.Element {
             {error !== null ? (
               <p
                 role="alert"
-                className="rounded border border-verdict-fail/40 bg-verdict-fail/10 px-3 py-2 text-sm text-verdict-fail"
+                className="rounded-lg border border-verdict-fail/40 bg-verdict-fail/10 px-3 py-2 text-sm text-verdict-fail"
               >
                 {error}
               </p>
             ) : null}
 
-            <Button type="submit" variant="primary" block disabled={loading} className="w-full">
+            <Button type="submit" variant="primary" size="lg" disabled={loading} className="w-full">
               {loading ? <Spinner /> : null}
               {isSignUp ? 'Create account' : 'Sign in'}
             </Button>
           </form>
 
-          <div className="mt-4 border-t border-edge pt-4 text-center text-sm">
+          <div className="mt-5 border-t border-edge pt-5 text-center text-sm">
             <button
               type="button"
               onClick={() => {
                 setMode(isSignUp ? 'signin' : 'signup');
                 setFieldErrors({});
               }}
-              className="rounded text-content-muted underline underline-offset-4 hover:text-content"
+              className="rounded text-content-muted underline underline-offset-4 transition-colors hover:text-accent"
             >
               {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
             </button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }
@@ -235,7 +263,7 @@ function Field({
 
   return (
     <div className="space-y-1">
-      <label htmlFor={id} className="block text-sm font-medium">
+      <label htmlFor={id} className="block text-xs font-medium text-content-muted">
         {label}
       </label>
       <input
@@ -248,7 +276,7 @@ function Field({
         aria-invalid={error !== undefined}
         {...(describedBy === '' ? {} : { 'aria-describedby': describedBy })}
         onChange={(event) => onChange(event.target.value)}
-        className="block w-full rounded-md border border-edge bg-surface px-3 py-2 text-sm text-content placeholder:text-content-subtle"
+        className="block h-11 w-full rounded-lg border border-edge bg-surface px-3.5 text-sm text-content transition-colors placeholder:text-content-subtle hover:border-edge-strong"
       />
       {hint !== undefined ? (
         <p id={hintId} className="text-xs text-content-subtle">
@@ -266,10 +294,8 @@ function Field({
 
 function LoginSkeleton(): JSX.Element {
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col justify-center px-4 py-12">
-      <div className="flex items-center justify-center rounded-panel border border-edge py-16">
-        <Spinner label="Loading sign-in form" />
-      </div>
+    <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-12">
+      <div className="skeleton h-96 w-full" role="status" aria-label="Loading sign-in form" />
     </div>
   );
 }

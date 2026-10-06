@@ -14,9 +14,14 @@
  * `poweredByHeader: false` avoids advertising the framework to a scanner that
  * should not find anything interesting.
  */
+/** The API is cross-origin in dev (3000 -> 8000), so `connect-src 'self'` alone blocks every call. */
+const API_ORIGIN = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8000';
+
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
+  // Monaco ships ESM with CSS imports; Next must compile it rather than treat it as pre-built.
+  transpilePackages: ['monaco-editor'],
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
   eslint: { ignoreDuringBuilds: false },
@@ -41,7 +46,7 @@ const nextConfig = {
               "worker-src 'self' blob:",
               // Monaco loads its worker from a blob URL; without this connect-src
               // the editor silently fails to initialise with no error message.
-              "connect-src 'self' ws: wss:",
+              "connect-src 'self' ws: wss: " + API_ORIGIN,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "object-src 'none'",

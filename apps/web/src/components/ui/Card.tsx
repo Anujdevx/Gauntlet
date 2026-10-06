@@ -1,9 +1,5 @@
 /**
- * Surface container.
- *
- * Split into named sections rather than accepting arbitrary props so that panel
- * spacing stays consistent. The IDE uses these as the frame for every region,
- * and ad-hoc padding overrides were the reason panels drifted out of alignment.
+ * Surface container, split into named sections so panel spacing stays consistent.
  */
 import type { HTMLAttributes, ReactNode } from 'react';
 
@@ -12,10 +8,7 @@ import { cn } from '@/lib/cn';
 export function Card({ className, ...rest }: HTMLAttributes<HTMLDivElement>): JSX.Element {
   return (
     <div
-      className={cn(
-        'rounded-panel border border-edge bg-surface-raised text-content',
-        className,
-      )}
+      className={cn('rounded-panel border border-edge bg-surface-raised text-content', className)}
       {...rest}
     />
   );
@@ -27,7 +20,7 @@ interface CardSectionProps extends HTMLAttributes<HTMLDivElement> {
 
 export function CardHeader({ className, children, ...rest }: CardSectionProps): JSX.Element {
   return (
-    <div className={cn('flex flex-col gap-1 border-b border-edge px-4 py-3', className)} {...rest}>
+    <div className={cn('flex flex-col gap-1 border-b border-edge px-5 py-4', className)} {...rest}>
       {children}
     </div>
   );
@@ -45,11 +38,7 @@ export function CardTitle({ className, children, ...rest }: CardHeadingProps): J
   );
 }
 
-export function CardDescription({
-  className,
-  children,
-  ...rest
-}: CardSectionProps): JSX.Element {
+export function CardDescription({ className, children, ...rest }: CardSectionProps): JSX.Element {
   return (
     <p className={cn('text-xs text-content-muted', className)} {...rest}>
       {children}
@@ -59,7 +48,7 @@ export function CardDescription({
 
 export function CardContent({ className, children, ...rest }: CardSectionProps): JSX.Element {
   return (
-    <div className={cn('px-4 py-3', className)} {...rest}>
+    <div className={cn('px-5 py-4', className)} {...rest}>
       {children}
     </div>
   );
@@ -68,7 +57,7 @@ export function CardContent({ className, children, ...rest }: CardSectionProps):
 export function CardFooter({ className, children, ...rest }: CardSectionProps): JSX.Element {
   return (
     <div
-      className={cn('flex items-center gap-2 border-t border-edge px-4 py-3', className)}
+      className={cn('flex items-center gap-2 border-t border-edge px-5 py-4', className)}
       {...rest}
     >
       {children}

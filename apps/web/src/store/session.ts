@@ -37,7 +37,7 @@ export const useSessionStore = create<SessionState>()((set) => ({
     try {
       const response = await fetchCurrentUser();
       set({ user: response.user, loading: false });
-    } catch (cause) {
+    } catch {
       // A 401 here is the expected answer for a signed-out visitor, so it maps
       // to "no user" rather than to an error banner on every public page.
       set({ user: null, loading: false, error: null });

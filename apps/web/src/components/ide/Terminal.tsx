@@ -97,7 +97,7 @@ function OutputPane({ label, text, truncated, emptyHint }: OutputPaneProps): JSX
 
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label={label}>
-      <div className="flex items-center gap-2 px-3 py-1 text-xs text-content-subtle">
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-content-subtle">
         <span className="font-medium uppercase tracking-wide">{label}</span>
         <span aria-hidden>&middot;</span>
         <span>{display === '' ? emptyHint : `${display.length} chars`}</span>
@@ -122,7 +122,7 @@ function OutputPane({ label, text, truncated, emptyHint }: OutputPaneProps): JSX
           onScroll={onScroll}
           tabIndex={0}
           className={cn(
-            'scrollbar-thin size-full overflow-auto bg-surface-sunken px-3 py-2',
+            'scrollbar-thin size-full overflow-auto bg-surface-sunken px-4 py-2',
             'font-mono text-xs leading-relaxed text-content-muted',
           )}
         >
@@ -174,8 +174,20 @@ export function Terminal(): JSX.Element {
 
   return (
     <div className="flex size-full min-h-0 flex-col" role="region" aria-label="Run output">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-edge px-3 py-1.5 text-xs">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-edge px-4 py-2 text-xs">
         <TerminalIcon aria-hidden className="size-3.5 text-content-subtle" />
+        <span
+          aria-hidden
+          className={
+            connection === 'streaming' || connection === 'connecting' || connection === 'polling'
+              ? 'size-1.5 animate-pulse rounded-full bg-accent'
+              : connection === 'error'
+                ? 'size-1.5 rounded-full bg-verdict-fail'
+                : connection === 'done'
+                  ? 'size-1.5 rounded-full bg-verdict-pass'
+                  : 'size-1.5 rounded-full bg-edge-strong'
+          }
+        />
         <span className="text-content-subtle">{CONNECTION_LABELS[connection]}</span>
         {streamNotice !== null ? (
           <span className="text-verdict-skip">{sanitizeSingleLine(streamNotice, 160)}</span>
@@ -188,8 +200,9 @@ export function Terminal(): JSX.Element {
       </header>
 
       {!hasAnyOutput ? (
-        <p className="flex-1 px-3 py-2 text-xs text-content-subtle">
-          Run the challenge to see its output here.
+        <p className="flex-1 bg-surface-sunken px-4 py-3 font-mono text-xs text-content-subtle">
+          <span className="text-accent">$</span> waiting for a run
+          <span className="ml-1 inline-block h-3 w-1.5 translate-y-0.5 animate-stream-cursor bg-content-subtle" />
         </p>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">

@@ -7,14 +7,16 @@
  * may be sensitive to glare.
  */
 import type { Metadata, Viewport } from 'next';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/jetbrains-mono';
 import type { ReactNode } from 'react';
 
 import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Adaptive Assessment Simulator',
-    template: '%s | Adaptive Assessment Simulator',
+    default: 'Gauntlet — adaptive technical assessments',
+    template: '%s | Gauntlet',
   },
   description:
     'Practical engineering assessments graded by hidden unit tests, with probabilistic skill tracking.',
@@ -25,28 +27,31 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#0a0b0d' },
+    { media: '(prefers-color-scheme: light)', color: '#fcfcfb' },
+    { media: '(prefers-color-scheme: dark)', color: '#0b0b0e' },
   ],
 };
 
 const THEME_BOOTSTRAP = `
 (function () {
   try {
-    var stored = localStorage.getItem('oa-theme');
-    var dark = stored
-      ? stored === 'dark'
-      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var stored = localStorage.getItem('gauntlet-theme');
+    // Dark unless the candidate explicitly chose light: the IDE is designed dark-first.
+    var dark = stored ? stored === 'dark' : true;
     document.documentElement.classList.toggle('dark', dark);
   } catch (e) {
-    /* Private browsing or a blocked storage partition: fall back to light. */
+    /* Private browsing or a blocked storage partition: stay on the dark default. */
   }
 })();
 `.trim();
 
 export default function RootLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className="dark"
+      suppressHydrationWarning
+    >
       <head>
         {/*
           Runs before paint on purpose. `dangerouslySetInnerHTML` is safe here
