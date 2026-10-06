@@ -22,12 +22,34 @@ export VITE_CACHE_DIR=/tmp/vite-cache
 export TMPDIR=/tmp
 mkdir -p "$VITE_CACHE_DIR"
 
-cd /tmp/workspace
+# Stage the candidate's files and the hidden tests into ONE directory on the tmpfs.
+#
+# Hidden tests import the candidate's modules with relative paths (`./useThing`), which
+# cannot resolve across two separate mounts, and /runner (where the config lives) is
+# read-only while Vite insists on writing a temp file next to its config. Staging
+# solves both. Order is the security property: the candidate's files go in first and the
+# hidden tests and the grader's own config go in last, so a candidate cannot shadow a
+# test, ship their own vitest config, or plant a node_modules.
+WORK=/tmp/oa-react
+rm -rf "$WORK"
+mkdir -p "$WORK"
+cp -R /tmp/workspace/. "$WORK"/
+# A candidate must not add tests of their own: extra always-passing tests would raise
+# the pass ratio. Only the hidden tests, staged next, may exist.
+find "$WORK" -path "$WORK/node_modules" -prune -o -type f \
+     \( -name '*.test.*' -o -name '*.spec.*' \) -exec rm -f {} +
+cp -R /tmp/grading/. "$WORK"/
+rm -rf "$WORK/node_modules" "$WORK/vitest.config.mjs" "$WORK/vite.config.js" \
+       "$WORK/vite.config.ts" "$WORK/vitest.config.ts" "$WORK/vitest.config.js"
+ln -s /runner/node_modules "$WORK/node_modules"
+cp /runner/vitest.config.mjs "$WORK/vitest.config.mjs"
+
+cd "$WORK"
 
 set +e
 node /runner/node_modules/vitest/vitest.mjs run \
-    --config /runner/vitest.config.mjs \
-    --root /tmp/workspace \
+    --config "$WORK/vitest.config.mjs" \
+    --root "$WORK" \
     "$@" 2>&1
 EXIT=$?
 set -e

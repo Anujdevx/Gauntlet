@@ -33,7 +33,7 @@ __all__ = [
     "strip_fences",
 ]
 
-MIN_TESTS = {"python": 6, "sql": 3, "java": 6}
+MIN_TESTS = {"python": 6, "sql": 3, "java": 6, "react": 2}
 MAX_REFERENCE_MS = 8_000
 MIN_VALID_MUTANTS = 3
 #: A 'wrong' solution that passes may simply be equivalent to the reference (an LLM

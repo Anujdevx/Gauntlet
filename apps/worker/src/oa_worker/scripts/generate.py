@@ -176,7 +176,7 @@ def cmd_validate_existing(_args: argparse.Namespace) -> int:
     failures = 0
     rows = _run(load())
     for row in rows:
-        if row.language not in set(SUPPORTED):
+        if row.language not in {*SUPPORTED, "react"}:  # react: validated, not generated
             _say(f"- {row.slug}: skipped ({row.language} gates not implemented)")
             continue
         report = GateReport()

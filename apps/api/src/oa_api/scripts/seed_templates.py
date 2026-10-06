@@ -274,7 +274,7 @@ REACT_TEMPLATE: dict[str, Any] = {
             "\n"
             "export function useDebouncedValue<T>(value: T, delayMs: number): T {\n"
             "  // Implement this.\n"
-            "  return value;\n"
+            "  throw new Error('Not implemented');\n"
             "}\n"
         )
     },

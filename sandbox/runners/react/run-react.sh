@@ -11,5 +11,5 @@ if [ -f package.json ]; then
     exec npm run --silent start 2>/dev/null || exec npm run --silent dev
 fi
 
-echo "no package.json in /workspace; nothing to run" >&2
-exit 1
+echo "Nothing to run here (no package.json). Submit grades your code against the hidden tests."
+exit 0

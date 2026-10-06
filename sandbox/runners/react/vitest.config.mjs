@@ -21,7 +21,7 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
-const resultPath = process.env.OA_RESULT_PATH || '/grading/result.json';
+const resultPath = process.env.OA_RESULT_PATH || '/tmp/grading-out/result.json';
 
 export default defineConfig({
   plugins: [react()],
@@ -29,7 +29,10 @@ export default defineConfig({
     environment: 'jsdom',
     globals: false,
     setupFiles: [],
-    include: ['/grading/**/*.test.{js,jsx,ts,tsx}'],
+    // Relative to the root the grader stages (see grade-react.sh): the candidate's files
+    // and the hidden tests are copied side by side so `./solution` imports resolve.
+    include: ['**/*.test.{js,jsx,ts,tsx}'],
+    exclude: ['**/node_modules/**'],
     passWithNoTests: false,
     pool: 'forks',
     poolOptions: { forks: { singleFork: true } },
@@ -43,7 +46,6 @@ export default defineConfig({
     // reporter, change the environment, or disable the sandbox's assertions.
     // `configFile: false` means this file is the only configuration in effect.
     configFile: false,
-    root: '/workspace',
     isolate: true,
     clearMocks: true,
     restoreMocks: true,
@@ -54,4 +56,9 @@ export default defineConfig({
     deps: { optimizer: { web: { enabled: false } } },
   },
   esbuild: { legalComments: 'none' },
+  // The sandbox is created with networking disabled, so the container has no
+  // /etc/hosts and the name `localhost` cannot be resolved (Vite does exactly that
+  // by default and dies with EAI_AGAIN). A literal address needs no lookup, and no
+  // socket is ever opened to it: the dev server is never started in a test run.
+  server: { host: '127.0.0.1', hmr: false, watch: null },
 });
