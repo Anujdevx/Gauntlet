@@ -1,4 +1,6 @@
-# Adaptive Technical Assessment Simulator
+# Gauntlet
+
+*An adaptive technical assessment simulator.*
 
 A platform that turns a job description into a graded, adaptive engineering
 assessment: it decomposes a syllabus into a DAG of granular skills, serves
@@ -6,8 +8,10 @@ practical coding tasks in a zero-trust sandbox, grades them with hidden unit
 tests only, and uses the results to update a probabilistic model of the
 candidate's mastery.
 
-> **Status: Phase 1 (RCE engine) in progress.** Backend scaffold, sandbox
-> orchestrator, and warm pool are implemented. See [docs/architecture](docs/architecture/overview.md).
+> **Status: Phase 2 (core product) working end to end.** Sign in, pick a challenge,
+> Submit, and watch hidden-test results stream back from the sandbox. Adaptive
+> mastery tracking (BKT, Elo, LLM question mutation) is Phase 3 and not built yet.
+> Sandbox orchestrator and warm pool are implemented. See [docs/architecture](docs/architecture/overview.md).
 
 ## Core principles
 
@@ -80,7 +84,7 @@ uv run celery -A oa_worker.celery_app worker --loglevel=info
 apps/web        Next.js frontend: Monaco IDE, dashboards, live test streaming
 apps/api        FastAPI control plane. Enqueues and streams; never executes.
 apps/worker     Celery workers, sandbox orchestrator, warm pool, result parsers
-sandbox/images  Dockerfile.{react,sql,python} with all dependencies baked in
+sandbox/images  Dockerfile.{react,sql,python,java} with all dependencies baked in
 sandbox/runners Per-language test-runner entrypoints
 sandbox/tests   Adversarial security tests; every escape attempt must be contained
 engine          BKT, Elo, DAG blame, adaptive retrieval, LLM mutation validation
@@ -89,11 +93,24 @@ templates       Curated seed question templates with hidden tests
 docs            Architecture, security model, runbooks, API reference
 ```
 
+## Growing the question bank with an LLM
+
+An LLM can author questions and their hidden tests; sandbox gates (reference passes, starter
+fails, wrong solutions are caught, an independent blind solve passes) decide what is trusted.
+See [question generation](docs/architecture/question-generation.md).
+
+```bash
+# GEMINI_API_KEY in .env (free key: https://aistudio.google.com/apikey)
+docker compose exec worker python -m oa_worker.scripts.generate generate \
+    --node sql.joins.outer --difficulty easy --count 3
+```
+
 ## Documentation
 
 - [Architecture overview](docs/architecture/overview.md) — components, trust boundaries, latency budget
 - [Sandbox security model](docs/security/sandbox.md) — all 20 controls and how each is verified
 - [Adding a language runtime](docs/architecture/adding-a-runtime.md) — worked example, six files
+- [Question generation](docs/architecture/question-generation.md) — LLM authoring and the validation gates
 - [API reference](docs/api/reference.md) — endpoints and metrics
 - [Runbooks](docs/runbooks/) — leaked containers, latency, infra errors, new runtimes
 

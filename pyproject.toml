@@ -1,7 +1,7 @@
 [project]
 name = "oa-prep-platform"
 version = "0.1.0"
-description = "Adaptive Technical Assessment Simulator: zero-trust RCE, deterministic grading, probabilistic skill tracking."
+description = "Gauntlet, an adaptive technical assessment simulator: zero-trust RCE, deterministic grading, probabilistic skill tracking."
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [

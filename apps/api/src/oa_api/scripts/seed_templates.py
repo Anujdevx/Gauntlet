@@ -71,6 +71,18 @@ NODES: list[tuple[str, str, str]] = [
     ("rag.retrieval.chunking", "Chunking", "Splitting documents so retrieval works."),
     ("rag.assembly", "Prompt assembly", "Placing retrieved context into a prompt."),
     ("rag.context", "Context windows", "Fitting evidence into a finite window."),
+    # -- Java --------------------------------------------------------------
+    ("java", "Java", "Core Java fluency."),
+    ("java.collections", "Collections", "Lists, sets, maps and their idioms."),
+    ("java.collections.maps", "Maps", "HashMap and TreeMap: counting, merging, ordering."),
+    ("java.streams", "Streams", "Declarative pipelines with java.util.stream."),
+    ("java.strings", "Strings", "Parsing, StringBuilder and formatting."),
+    (
+        "java.oop",
+        "Object-oriented design",
+        "Classes, interfaces, immutability, equals and hashCode.",
+    ),
+    ("java.exceptions", "Exceptions", "Checked and unchecked exceptions, custom types."),
 ]
 
 
@@ -172,25 +184,66 @@ SQL_TEMPLATE: dict[str, Any] = {
     "run_command": ["/bin/sh", "/runner/run-sql.sh"],
     "starter_files": {"solution.sql": "-- Write your query here.\n"},
     "hidden_tests": {
+        # Four scenarios on different data, so a hard-coded answer cannot pass. Each
+        # method is renamed to its scenario so results read well in the UI.
         "test_query.py": (
-            "from harness import SQLGradingCase, build_case\n"
+            "from harness import build_case\n"
             "\n"
             "DDL = [\n"
             "    'CREATE TABLE customers (id INTEGER PRIMARY KEY, name TEXT NOT NULL)',\n"
             "    'CREATE TABLE orders (id INTEGER PRIMARY KEY, '\n"
             "     'customer_id INTEGER REFERENCES customers(id), total INTEGER NOT NULL)',\n"
             "]\n"
-            "SEED = [\n"
-            "    \"INSERT INTO customers (id, name) VALUES (1, 'ada'), (2, 'grace')\",\n"
-            "    'INSERT INTO orders (id, customer_id, total) VALUES '\n"
-            "     '(10, 1, 250), (11, 2, 90), (12, 1, 400)',\n"
-            "]\n"
-            "EXPECTED = [('ada', 400), ('ada', 250), ('grace', 90)]\n"
             "\n"
-            "GeneratedCase = build_case(\n"
-            "    ddl=DDL, seed=SEED, candidate_sql='',\n"
-            "    expectations=[('ordered by total desc', EXPECTED, True)],\n"
+            "Scenario0 = build_case(\n"
+            "    ddl=DDL,\n"
+            "    seed=[\n"
+            "        \"INSERT INTO customers (id, name) VALUES (1, 'ada'), (2, 'grace')\",\n"
+            "        'INSERT INTO orders (id, customer_id, total) VALUES (10, 1, 250), (11, 2, 90), (12, 1, 400)',\n"  # noqa: E501
+            "    ],\n"
+            "    candidate_sql='',\n"
+            "    expectations=[('orders ranked by total, highest first',\n"
+            "                   [('ada', 400), ('ada', 250), ('grace', 90)], True)],\n"
             ")\n"
+            "Scenario0.test_orders_ranked_by_total_highest_first = Scenario0.test_case_0\n"
+            "del Scenario0.test_case_0\n"
+            "\n"
+            "Scenario1 = build_case(\n"
+            "    ddl=DDL,\n"
+            "    seed=[\n"
+            "        \"INSERT INTO customers (id, name) VALUES (1, 'ada')\",\n"
+            "        'INSERT INTO orders (id, customer_id, total) VALUES (10, 1, 100), (11, NULL, 500)',\n"  # noqa: E501
+            "    ],\n"
+            "    candidate_sql='',\n"
+            "    expectations=[('an order with no customer is excluded', [('ada', 100)], True)],\n"
+            ")\n"
+            "Scenario1.test_an_order_with_no_customer_is_excluded = Scenario1.test_case_0\n"
+            "del Scenario1.test_case_0\n"
+            "\n"
+            "Scenario2 = build_case(\n"
+            "    ddl=DDL,\n"
+            "    seed=[\n"
+            "        \"INSERT INTO customers (id, name) VALUES (1, 'ada'), (2, 'grace'), (3, 'linus')\",\n"  # noqa: E501
+            "        'INSERT INTO orders (id, customer_id, total) VALUES (10, 2, 70), (11, 1, 30), (12, 2, 20)',\n"  # noqa: E501
+            "    ],\n"
+            "    candidate_sql='',\n"
+            "    expectations=[('a customer without orders does not appear',\n"
+            "                   [('grace', 70), ('ada', 30), ('grace', 20)], True)],\n"
+            ")\n"
+            "Scenario2.test_a_customer_without_orders_does_not_appear = Scenario2.test_case_0\n"
+            "del Scenario2.test_case_0\n"
+            "\n"
+            "Scenario3 = build_case(\n"
+            "    ddl=DDL,\n"
+            "    seed=[\n"
+            "        \"INSERT INTO customers (id, name) VALUES (7, 'sam')\",\n"
+            "        'INSERT INTO orders (id, customer_id, total) VALUES (1, 7, 5)',\n"
+            "    ],\n"
+            "    candidate_sql='',\n"
+            "    expectations=[('a single order', [('sam', 5)], True)],\n"
+            ")\n"
+            "Scenario3.test_a_single_order = Scenario3.test_case_0\n"
+            "del Scenario3.test_case_0\n"
         )
     },
     "reference_solution": {
@@ -273,7 +326,127 @@ REACT_TEMPLATE: dict[str, Any] = {
     },
 }
 
-TEMPLATES: list[dict[str, Any]] = [PYTHON_TEMPLATE, SQL_TEMPLATE, REACT_TEMPLATE]
+JAVA_TEMPLATE: dict[str, Any] = {
+    "slug": "java-top-k-words",
+    "title": "Most frequent words",
+    "summary": (
+        "Implement `Solution.topWords(String text, int k)` returning the `k` most "
+        "frequent words in `text`.\n\n"
+        "- A word is a maximal run of ASCII letters (`a-z`, `A-Z`). Every other "
+        "character, including digits, apostrophes and punctuation, separates words.\n"
+        "- Words are compared case-insensitively and returned in lower case.\n"
+        "- Order by frequency, highest first. Break ties alphabetically.\n"
+        "- If there are fewer than `k` distinct words, return all of them. If `k` is "
+        "zero or negative, or `text` is empty or `null`, return an empty list."
+    ),
+    "language": "java",
+    "difficulty": "medium",
+    "run_command": ["/bin/sh", "/runner/run-java.sh"],
+    "starter_files": {
+        "Solution.java": r"""import java.util.List;
+
+public class Solution {
+    /**
+     * Returns the {@code k} most frequent words in {@code text}, most frequent first,
+     * ties broken alphabetically. See the task description for the exact rules.
+     */
+    public static List<String> topWords(String text, int k) {
+        throw new UnsupportedOperationException("TODO");
+    }
+}
+"""
+    },
+    "hidden_tests": {
+        "SolutionTest.java": r"""import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.Arrays;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+class SolutionTest {
+    @Test
+    void emptyAndNullTextGiveAnEmptyList() {
+        assertEquals(List.of(), Solution.topWords("", 3));
+        assertEquals(List.of(), Solution.topWords(null, 3));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"0", "-1", "-100"})
+    void nonPositiveKGivesAnEmptyList(int k) {
+        assertEquals(List.of(), Solution.topWords("a a b", k));
+    }
+
+    @Test
+    void wordsAreCaseInsensitiveAndReturnedLowerCase() {
+        assertEquals(List.of("go"), Solution.topWords("Go GO go gO", 1));
+    }
+
+    @Test
+    void tiesAreBrokenAlphabetically() {
+        assertEquals(List.of("apple", "pear"), Solution.topWords("pear apple pear apple fig", 2));
+    }
+
+    @Test
+    void digitsAndPunctuationSeparateWords() {
+        assertEquals(List.of("don", "t"), Solution.topWords("don't don't 42 don't", 2));
+    }
+
+    @Test
+    void fewerDistinctWordsThanKReturnsThemAll() {
+        assertEquals(List.of("b", "a"), Solution.topWords("b b a", 10));
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "the cat the dog the cat|2|the,cat",
+        "x y z|3|x,y,z",
+        "Z z a A b|2|a,z",
+        "one, two; two? three: three: three!|3|three,two,one"
+    })
+    void rankingsFollowFrequencyThenAlphabet(String text, int k, String expected) {
+        assertEquals(Arrays.asList(expected.split(",")), Solution.topWords(text, k));
+    }
+}
+"""
+    },
+    "reference_solution": {
+        "Solution.java": r"""import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class Solution {
+    public static List<String> topWords(String text, int k) {
+        if (text == null || k <= 0) {
+            return List.of();
+        }
+        Map<String, Integer> counts = new HashMap<>();
+        StringBuilder word = new StringBuilder();
+        for (int i = 0; i <= text.length(); i++) {
+            char c = i < text.length() ? text.charAt(i) : ' ';
+            boolean letter = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+            if (letter) {
+                word.append(Character.toLowerCase(c));
+            } else if (word.length() > 0) {
+                counts.merge(word.toString(), 1, Integer::sum);
+                word.setLength(0);
+            }
+        }
+        return counts.entrySet().stream()
+            .sorted(Map.Entry.<String, Integer>comparingByValue().reversed()
+                .thenComparing(Map.Entry.comparingByKey()))
+            .limit(k)
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toList());
+    }
+}
+"""
+    },
+}
+
+TEMPLATES: list[dict[str, Any]] = [PYTHON_TEMPLATE, SQL_TEMPLATE, REACT_TEMPLATE, JAVA_TEMPLATE]
 
 #: Which concept nodes each template assesses.
 TEMPLATE_NODES: dict[str, list[str]] = {
@@ -285,6 +458,7 @@ TEMPLATE_NODES: dict[str, list[str]] = {
         "react.hooks.useeffect",
         "react.hooks.useeffect.dependencies",
     ],
+    "java-top-k-words": ["java", "java.collections", "java.collections.maps", "java.strings"],
 }
 
 

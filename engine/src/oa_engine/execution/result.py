@@ -34,6 +34,10 @@ __all__ = [
 ]
 
 
+#: One character per byte at most, so a stream capped at ``max_stream_bytes`` always fits.
+STREAM_MAX_CHARS = 256 * 1024
+
+
 class ExecutionStatus(str, enum.Enum):
     """Terminal state of a sandboxed run."""
 
@@ -170,8 +174,11 @@ class ExecutionResult(BaseModel):
         max_length=2000,
         description="Per-hidden-test outcomes, in runner-reported order.",
     )
-    stdout: str = Field(default="", max_length=256_000)
-    stderr: str = Field(default="", max_length=256_000)
+    #: Must be >= the envelope's ``max_stream_bytes`` (256 KiB). A character limit below
+    #: the byte cap made any stream between the two sizes crash result construction
+    #: instead of being reported as truncated.
+    stdout: str = Field(default="", max_length=STREAM_MAX_CHARS)
+    stderr: str = Field(default="", max_length=STREAM_MAX_CHARS)
     runtime_ms: int = Field(default=0, ge=0, description="Sandboxed execution time only.")
     #: Truncation flags so the UI can warn the candidate rather than silently
     #: showing partial output as if it were complete.

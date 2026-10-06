@@ -714,6 +714,7 @@ def _grader_argv(payload: SubmissionPayload) -> list[str]:
         "python": ["/runner/grade-python.sh"],
         "react": ["/runner/grade-react.sh"],
         "sql": ["/runner/grade-sql.sh"],
+        "java": ["/runner/grade-java.sh"],
     }
     try:
         return scripts[payload.language]

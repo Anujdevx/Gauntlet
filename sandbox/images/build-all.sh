@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build all three sandbox images in the daemon that will run them.
+# Build every sandbox image in the daemon that will run them.
 #
 # Tags are versioned rather than :latest because grading must be reproducible:
 # a mutable tag means the same submission could be graded by different code a
@@ -50,5 +50,6 @@ log "target platform linux/amd64, tag ${TAG}"
 build_one python Dockerfile.python
 build_one react  Dockerfile.react
 build_one sql    Dockerfile.sql
+build_one java   Dockerfile.java
 
 log "done: $(wc -l < "$MANIFEST") images"

@@ -178,4 +178,8 @@ def get_parser(language: Language) -> ResultParser:
             from oa_worker.parsers.unittest_sql_parser import SqlUnittestParser
 
             return SqlUnittestParser()
+        case Language.JAVA:
+            from oa_worker.parsers.java_parser import JavaParser
+
+            return JavaParser()
     raise ValueError(f"no result parser for language {language!r}")

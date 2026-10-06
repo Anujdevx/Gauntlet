@@ -28,7 +28,7 @@ __all__ = [
     "SubmissionStatusResponse",
 ]
 
-Language = Literal["python", "react", "sql"]
+Language = Literal["python", "react", "sql", "java"]
 Difficulty = Literal["easy", "medium", "hard"]
 SubmissionMode = Literal["run", "submit"]
 

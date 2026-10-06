@@ -26,7 +26,7 @@ from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # --------------------------------------------------------------------------
@@ -40,6 +40,7 @@ class Language(str, enum.Enum):
     PYTHON = "python"
     REACT = "react"
     SQL = "sql"
+    JAVA = "java"
 
 
 # --------------------------------------------------------------------------
@@ -201,6 +202,9 @@ DEFAULT_ENVELOPE: SandboxEnvelope = SandboxEnvelope()
 # --------------------------------------------------------------------------
 
 
+DEFAULT_GEMINI_MODELS = "gemini-3.6-flash,gemini-3.5-flash,gemini-3.8-flash,gemini-3.5-flash-lite"
+
+
 class Settings(BaseSettings):
     """Operational configuration, sourced from the environment or ``.env``.
 
@@ -272,10 +276,25 @@ class Settings(BaseSettings):
     #: ``gvisor`` pytest marker.
     sandbox_runtime: str = DEFAULT_SANDBOX_RUNTIME
 
+    # -- LLM question generation ---------------------------------------------
+    #: Only the worker's offline generation job reads these. Never the API, never a
+    #: sandbox: a key inside a container that runs hostile code is a leaked key.
+    #: ``SecretStr`` so a stray ``print(settings)`` or log line shows ``**********``.
+    gemini_api_key: SecretStr | None = None
+    #: Comma-separated fallback chain, tried in order. Blank means the default chain
+    #: (compose passes an unset variable through as an empty string).
+    gemini_model: str = DEFAULT_GEMINI_MODELS
+
+    @field_validator("gemini_model", mode="after")
+    @classmethod
+    def _default_blank_gemini_model(cls, value: str) -> str:
+        return value.strip() or DEFAULT_GEMINI_MODELS
+
     # -- sandbox images ----------------------------------------------------
     image_python: str = "oa/sandbox-python:1.0.0"
     image_react: str = "oa/sandbox-react:1.0.0"
     image_sql: str = "oa/sandbox-sql:1.0.0"
+    image_java: str = "oa/sandbox-java:1.0.0"
     #: Suffix appended to give each warm container a unique, greppable name.
     container_name_prefix: str = "oa-sbx"
 
@@ -372,6 +391,7 @@ class Settings(BaseSettings):
             Language.PYTHON: self.image_python,
             Language.REACT: self.image_react,
             Language.SQL: self.image_sql,
+            Language.JAVA: self.image_java,
         }
         return images[language]
 

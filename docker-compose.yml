@@ -151,7 +151,13 @@ services:
       IMAGE_PYTHON: ${IMAGE_PYTHON:-oa/sandbox-python:1.0.0}
       IMAGE_REACT: ${IMAGE_REACT:-oa/sandbox-react:1.0.0}
       IMAGE_SQL: ${IMAGE_SQL:-oa/sandbox-sql:1.0.0}
+      IMAGE_JAVA: ${IMAGE_JAVA:-oa/sandbox-java:1.0.0}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Offline question generation only. The worker is the one service that can both
+      # call the LLM and run the validation sandbox; the API and the sandbox
+      # containers never receive this key.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
     volumes:
       # Only the worker gets the socket. Deliberately not shared with `api`.
       - /var/run/docker.sock:/var/run/docker.sock:rw

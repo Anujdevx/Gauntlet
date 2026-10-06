@@ -457,6 +457,7 @@ class SandboxOrchestrator:
         yield Language.PYTHON
         yield Language.REACT
         yield Language.SQL
+        yield Language.JAVA
 
 
 def _grade(
