@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from conftest import BUGGY, REF, FakeLLM, FakeSandbox, LLMError, LLMOutputError, draft, make_result
+from conftest import (
+    BUGGY,
+    REF,
+    FakeLLM,
+    FakeSandbox,
+    LLMError,
+    LLMOutputError,
+    RelevanceVerdict,
+    draft,
+    make_result,
+)
 
 from oa_worker.generation.pipeline import generate_question
 from oa_worker.generation.sandbox import SandboxUnavailableError
@@ -84,3 +94,45 @@ def test_gives_up_after_max_attempts(sandbox: FakeSandbox) -> None:
     sandbox.when(REF, make_result(2))
     outcome = run(FakeLLM([draft(), draft(), draft()]), sandbox, max_attempts=3)
     assert not outcome.accepted and len(outcome.attempts) == 3 and outcome.aborted is None
+
+
+def test_a_question_about_a_different_skill_is_rejected_with_feedback(
+    sandbox: FakeSandbox,
+) -> None:
+    sandbox.when(GOOD_BLIND, make_result(6))
+    wrong_skill = RelevanceVerdict(
+        primary_technique="heap-based topological sort",
+        assesses_target_skill=False,
+        reason="Backtracking is not needed; a priority queue solves it directly.",
+    )
+    llm = FakeLLM(
+        [draft(), draft(title="A genuinely recursive variant")],
+        [GOOD_BLIND, GOOD_BLIND, GOOD_BLIND, GOOD_BLIND],
+        verdicts=[wrong_skill],  # first attempt judged off-target, second falls back to "ok"
+    )
+    outcome = run(llm, sandbox)
+    assert outcome.accepted and outcome.metrics["attempts"] == 2
+    retry_prompt = next(p for p in llm.prompts if "REJECTED" in p)
+    assert "heap-based topological sort" in retry_prompt
+    assert "not the target skill" in retry_prompt
+
+
+def test_a_malformed_judge_answer_does_not_discard_a_good_question(sandbox: FakeSandbox) -> None:
+    sandbox.when(GOOD_BLIND, make_result(6))
+    llm = FakeLLM([draft()], [GOOD_BLIND, GOOD_BLIND], verdicts=[LLMOutputError("bad json")])
+    outcome = run(llm, sandbox)
+    assert outcome.accepted
+    assert outcome.metrics["relevance"] == "unjudged"
+
+
+def test_the_primary_technique_is_recorded_on_acceptance(sandbox: FakeSandbox) -> None:
+    sandbox.when(GOOD_BLIND, make_result(6))
+    llm = FakeLLM([draft()], [GOOD_BLIND, GOOD_BLIND])
+    assert run(llm, sandbox).metrics["primary_technique"] == "the target"
+
+
+def test_an_llm_outage_during_the_relevance_check_aborts(sandbox: FakeSandbox) -> None:
+    sandbox.when(GOOD_BLIND, make_result(6))
+    llm = FakeLLM([draft()], [GOOD_BLIND, GOOD_BLIND], verdicts=[LLMError("down")])
+    outcome = run(llm, sandbox)
+    assert not outcome.accepted and "relevance check" in (outcome.aborted or "")

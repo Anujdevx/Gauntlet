@@ -8,7 +8,7 @@ import pytest
 
 from oa_engine.execution import ExecutionResult, ExecutionStatus, TestCaseResult
 from oa_engine.generation import PythonDraft, Question, build_python_question
-from oa_engine.generation.prompts import BlindSolution
+from oa_engine.generation.prompts import BlindSolution, RelevanceVerdict
 from oa_engine.llm import LLMError, LLMOutputError
 
 TOTAL = 6
@@ -77,15 +77,30 @@ class FakeLLM:
 
     model = "fake-model"
 
-    def __init__(self, drafts: list[Any], solutions: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        drafts: list[Any],
+        solutions: list[str] | None = None,
+        verdicts: list[Any] | None = None,
+    ) -> None:
         self.drafts = list(drafts)
         self.solutions = list(solutions or [])
+        self.verdicts = list(verdicts or [])
         self.prompts: list[str] = []
 
     def generate(
         self, *, system: str, prompt: str, schema: type[Any], temperature: float = 0.7
     ) -> Any:
         self.prompts.append(prompt)
+        if schema is RelevanceVerdict:
+            if self.verdicts:
+                item = self.verdicts.pop(0)
+                if isinstance(item, Exception):
+                    raise item
+                return item
+            return RelevanceVerdict(
+                primary_technique="the target", assesses_target_skill=True, reason=""
+            )
         if schema is BlindSolution:
             return BlindSolution(solution=self.solutions.pop(0))
         item = self.drafts.pop(0)
@@ -124,4 +139,12 @@ def sandbox() -> FakeSandbox:
     return box
 
 
-__all__ = ["FakeLLM", "FakeSandbox", "LLMError", "LLMOutputError", "draft", "make_result"]
+__all__ = [
+    "FakeLLM",
+    "FakeSandbox",
+    "LLMError",
+    "LLMOutputError",
+    "RelevanceVerdict",
+    "draft",
+    "make_result",
+]

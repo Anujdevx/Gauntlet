@@ -19,12 +19,12 @@ from typing import Any
 from sqlalchemy import select
 
 from oa_api.models.db import dispose_engine, session_scope
-from oa_api.models.tables import ConceptNode, QuestionTemplate
+from oa_api.models.tables import ConceptNode, QuestionTemplate, QuestionTemplateNode
 from oa_engine.generation import Question, resolve_language
 from oa_engine.llm import GeminiClient, LLMError
 from oa_engine.platform.config import get_settings
 from oa_worker.generation.gates import GateReport, run_core_gates
-from oa_worker.generation.pipeline import Outcome, generate_question
+from oa_worker.generation.pipeline import Outcome, _judge_relevance, generate_question
 from oa_worker.generation.sandbox import DockerSandbox
 from oa_worker.generation.store import existing_titles, save_question
 
@@ -192,6 +192,69 @@ def cmd_validate_existing(_args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def cmd_audit_relevance(args: argparse.Namespace) -> int:
+    """Ask the relevance judge whether each question tests the skill it is filed under.
+
+    Each template is judged against its deepest linked concept node. Without ``--apply``
+    this only reports; with it, mismatches are deactivated (``is_active = false``), which
+    hides them from candidates without deleting anything.
+    """
+    settings = get_settings()
+    if settings.gemini_api_key is None or not settings.gemini_api_key.get_secret_value():
+        _say("GEMINI_API_KEY is not set.")
+        return 2
+    llm = GeminiClient(api_key=settings.gemini_api_key, model=settings.gemini_model)
+
+    async def load() -> list[tuple[QuestionTemplate, ConceptNode]]:
+        async with session_scope() as session:
+            rows = await session.execute(
+                select(QuestionTemplate, ConceptNode)
+                .join(QuestionTemplateNode, QuestionTemplateNode.template_id == QuestionTemplate.id)
+                .join(ConceptNode, ConceptNode.id == QuestionTemplateNode.node_id)
+                .where(QuestionTemplate.is_active.is_(True), ConceptNode.id.like(f"{args.scope}%"))
+            )
+            deepest: dict[str, tuple[QuestionTemplate, ConceptNode]] = {}
+            for template, node in rows.all():
+                current = deepest.get(template.slug)
+                if current is None or node.depth > current[1].depth:
+                    deepest[template.slug] = (template, node)
+            return list(deepest.values())
+
+    mismatches: list[str] = []
+    for template, node in _run(load()):
+        question = _as_question(template)
+        verdict = _judge_relevance(
+            llm,
+            node_id=node.id,
+            node_label=node.label,
+            node_description=node.description or "",
+            question=question,
+        )
+        if verdict is None:
+            _say(f"?    {template.slug}: judge gave no usable answer")
+        elif verdict.assesses_target_skill:
+            _say(f"OK   {template.slug}  [{node.id}] technique: {verdict.primary_technique}")
+        else:
+            mismatches.append(template.slug)
+            _say(f"MISMATCH {template.slug}  [{node.id}]")
+            _say(f"       technique: {verdict.primary_technique}; {verdict.reason}")
+
+    if args.apply and mismatches:
+
+        async def deactivate() -> None:
+            async with session_scope() as session:
+                for slug in mismatches:
+                    row = await session.scalar(
+                        select(QuestionTemplate).where(QuestionTemplate.slug == slug)
+                    )
+                    if row is not None:
+                        row.is_active = False
+
+        _run(deactivate())
+        _say(f"deactivated {len(mismatches)} mismatched question(s)")
+    return 1 if mismatches else 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -214,6 +277,11 @@ def main() -> int:
 
     val = sub.add_parser("validate-existing", help="re-check every template in the bank")
     val.set_defaults(func=cmd_validate_existing)
+
+    aud = sub.add_parser("audit-relevance", help="judge whether questions test their skill")
+    aud.add_argument("--scope", default="", help="only nodes whose id starts with this, e.g. dsa")
+    aud.add_argument("--apply", action="store_true", help="deactivate mismatched questions")
+    aud.set_defaults(func=cmd_audit_relevance)
 
     args = parser.parse_args()
     try:

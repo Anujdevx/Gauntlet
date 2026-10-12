@@ -48,3 +48,15 @@ def test_errors_about_the_candidates_own_code_are_kept() -> None:
 def test_the_allowlist_is_capped() -> None:
     text = "".join(f"E   NameError: name 'x{i}' is not defined\n" for i in range(10))
     assert len(_candidate_safe_errors(text).splitlines()) == 3
+
+
+def test_result_document_is_stripped_from_the_grader_transcript() -> None:
+    from oa_worker.sandbox.orchestrator import _strip_result_block
+
+    transcript = (
+        "=== FAILURES ===\nE   AssertionError: assert 3 == 1\n"
+        'OA_RESULT_BEGIN\n{"tests": [' + '{"nodeid": "x"}, ' * 500 + "]}\nOA_RESULT_END\n"
+    )
+    out = _strip_result_block(transcript)
+    assert "FAILURES" in out and "assert 3 == 1" in out
+    assert "OA_RESULT" not in out and "nodeid" not in out

@@ -356,8 +356,8 @@ class SandboxOrchestrator:
             # values), so it travels separately and is never serialised. The one thing
             # taken from it is a short allow-list of errors about the candidate's own
             # code (a missing function, a syntax error), so those stay actionable.
-            grader_text = _join_streams(
-                grading.stdout, grading.stderr, self.envelope.max_stream_bytes
+            grader_text = _strip_result_block(
+                _join_streams(grading.stdout, grading.stderr, self.envelope.max_stream_bytes)
             )
             hints = _candidate_safe_errors(grader_text)
             return RunOutcome(
@@ -525,6 +525,18 @@ _SAFE_ERROR = re.compile(
     r"|AttributeError|TabError)\b[^\n]{0,300})$",
     re.M,
 )
+
+
+_RESULT_BLOCK = re.compile(r"OA_RESULT_BEGIN.*?OA_RESULT_END", re.S)
+
+
+def _strip_result_block(grader_text: str) -> str:
+    """Drop the machine-readable result document, keep the runner's own console report.
+
+    The document is a large JSON blob that ends the transcript; left in, it pushes the
+    useful part (pytest's failure report) out of any tail a caller looks at.
+    """
+    return _RESULT_BLOCK.sub("", grader_text).strip()
 
 
 def _candidate_safe_errors(grader_text: str, limit: int = 3) -> str:

@@ -9,7 +9,14 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-__all__ = ["SYSTEM", "BlindSolution", "authoring_prompt", "blind_prompt"]
+__all__ = [
+    "SYSTEM",
+    "BlindSolution",
+    "RelevanceVerdict",
+    "authoring_prompt",
+    "blind_prompt",
+    "relevance_prompt",
+]
 
 SYSTEM = (
     "You are a senior software engineer who writes rigorous technical-assessment "
@@ -195,4 +202,44 @@ def blind_prompt(*, language: str, prompt: str, starter: str) -> str:
         "natural behaviour.\n\n"
         f"TASK:\n{prompt}\n\n"
         f"STARTER FILE:\n{starter}\n"
+    )
+
+
+class RelevanceVerdict(BaseModel):
+    """A second opinion on whether a question assesses the skill it is filed under."""
+
+    primary_technique: str = Field(
+        description="The single main technique or concept needed to solve the question."
+    )
+    assesses_target_skill: bool = Field(
+        description="True only if that technique IS the target skill (or a core part of it)."
+    )
+    reason: str = Field(description="One or two sentences justifying the verdict.")
+
+
+def relevance_prompt(
+    *,
+    node_id: str,
+    node_label: str,
+    node_description: str,
+    title: str,
+    prompt: str,
+    reference: str,
+) -> str:
+    """Ask whether a question really tests the skill it is tagged with.
+
+    Mastery tracking credits every outcome to the question's skill node, so a question
+    that is secretly about something else (a "backtracking" question that is really a
+    heap-based topological sort) would teach the skill model the wrong thing.
+    """
+    return (
+        "You are auditing an assessment question for skill fidelity. Be strict.\n\n"
+        f"TARGET SKILL: {node_id} ({node_label}): {node_description}\n\n"
+        f"QUESTION TITLE: {title}\n\nQUESTION:\n{prompt}\n\n"
+        f"REFERENCE SOLUTION:\n{reference}\n\n"
+        "1. Name the single main technique a solver needs.\n"
+        "2. Decide whether that technique is the target skill. If a different, more "
+        "specific technique is the natural way to solve it (for example a heap, a "
+        "topological sort, binary search, or plain iteration instead of the target), answer "
+        "false."
     )

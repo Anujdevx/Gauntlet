@@ -27,7 +27,14 @@ from oa_engine.generation import (
     build_python_question,
     build_sql_question,
 )
-from oa_engine.generation.prompts import SYSTEM, BlindSolution, authoring_prompt, blind_prompt
+from oa_engine.generation.prompts import (
+    SYSTEM,
+    BlindSolution,
+    RelevanceVerdict,
+    authoring_prompt,
+    blind_prompt,
+    relevance_prompt,
+)
 from oa_engine.llm import LLMError, LLMOutputError
 from oa_engine.platform.logging import get_logger
 from oa_worker.generation.gates import GateReport, run_gates
@@ -69,6 +76,40 @@ class Outcome:
 
 def _gate_dicts(report: GateReport) -> list[dict[str, Any]]:
     return [{"gate": g.name, "ok": g.ok, "detail": g.detail[:600]} for g in report.gates]
+
+
+def _judge_relevance(
+    llm: LLM,
+    *,
+    node_id: str,
+    node_label: str,
+    node_description: str,
+    question: Question,
+) -> RelevanceVerdict | None:
+    """Ask for a second opinion on skill fidelity; ``None`` if the answer is unusable.
+
+    An unusable (malformed) answer is not treated as a rejection: the question already
+    passed every deterministic gate, and a flaky judge should not discard good work. It is
+    recorded as ``unjudged`` so it can be audited later.
+    """
+    reference = next(iter(question.reference_files.values()))
+    try:
+        verdict = llm.generate(
+            system="You are a strict reviewer of assessment questions. Output only JSON.",
+            prompt=relevance_prompt(
+                node_id=node_id,
+                node_label=node_label,
+                node_description=node_description,
+                title=question.title,
+                prompt=question.prompt,
+                reference=reference,
+            ),
+            schema=RelevanceVerdict,
+            temperature=0.0,
+        )
+    except LLMOutputError:
+        return None
+    return verdict if isinstance(verdict, RelevanceVerdict) else None
 
 
 def generate_question(
@@ -160,6 +201,34 @@ def generate_question(
         except LLMError as exc:
             outcome.aborted = f"LLM unavailable during blind solve: {exc}"
             return outcome
+
+        if report.ok:
+            try:
+                verdict = _judge_relevance(
+                    llm,
+                    node_id=node_id,
+                    node_label=node_label,
+                    node_description=node_description,
+                    question=question,
+                )
+            except LLMError as exc:
+                outcome.aborted = f"LLM unavailable during relevance check: {exc}"
+                return outcome
+            if verdict is None:
+                report.metrics["relevance"] = "unjudged"
+            else:
+                report.metrics["primary_technique"] = verdict.primary_technique
+                report.add(
+                    "relevance",
+                    verdict.assesses_target_skill,
+                    ""
+                    if verdict.assesses_target_skill
+                    else (
+                        f"This question is really about '{verdict.primary_technique}', not the "
+                        f"target skill {node_id} ({node_label}). {verdict.reason} Rewrite it so "
+                        f"that {node_label.lower()} is the core of the solution."
+                    ),
+                )
 
         if report.ok:
             on_progress("  ACCEPTED: " + ", ".join(f"{k}={v}" for k, v in report.metrics.items()))
