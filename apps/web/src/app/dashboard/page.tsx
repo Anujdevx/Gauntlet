@@ -28,6 +28,7 @@ import {
   sanitizeSingleLine,
 } from '@/lib/format';
 import { useResource } from '@/hooks/useResource';
+import { matchScore } from '@/lib/skill-match';
 import type { Challenge, SkillNode } from '@/types/api';
 
 export default function DashboardPage(): JSX.Element {
@@ -77,7 +78,9 @@ function groupByDomain(nodes: readonly SkillNode[]): readonly DomainGroup[] {
   return [...byDomain.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([domain, entries]) => {
-      const ordered = [...entries].sort((a, b) => a.depth - b.depth || a.id.localeCompare(b.id));
+      // Dotted ids sort into tree order (a parent sorts before its children), so each skill
+      // sits under its parent instead of all categories being listed before all skills.
+      const ordered = [...entries].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const attempted = ordered.filter((node) => node.attempts > 0);
       return {
         domain,
@@ -106,13 +109,16 @@ function pickFocus(nodes: readonly SkillNode[]): SkillNode | null {
 }
 
 function challengeFor(node: SkillNode, challenges: readonly Challenge[]): Challenge | null {
-  const targets = (c: Challenge): boolean =>
-    c.concept_nodes.some((id) => id === node.id || id.startsWith(`${node.id}.`) || node.id.startsWith(`${id}.`));
-  return (
-    challenges.find(targets) ??
-    challenges.find((c) => c.concept_nodes.some((id) => id.split('.')[0] === node.domain)) ??
-    null
-  );
+  let best: Challenge | null = null;
+  let bestScore = 0;
+  for (const challenge of challenges) {
+    const score = Math.max(0, ...challenge.concept_nodes.map((id) => matchScore(node.id, id)));
+    if (score > bestScore) {
+      best = challenge;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 /* -------------------------------------------------------------------------- */

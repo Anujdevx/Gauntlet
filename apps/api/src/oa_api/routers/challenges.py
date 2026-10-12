@@ -336,28 +336,16 @@ def _parent_of(node_id: str, nodes: list[ConceptNode]) -> str | None:
 
 
 #: Bounds for the advertised time budget, in minutes.
-_MIN_ESTIMATED_MINUTES = 5
-_MAX_ESTIMATED_MINUTES = 45
+#: Planning estimate shown on the catalogue, by difficulty. It used to be derived from the
+#: reference solution's grader runtime, which is a few seconds of interpreter start-up and
+#: says nothing about how long a person needs to read, think and type.
+_MINUTES_BY_DIFFICULTY = {"easy": 10, "medium": 20, "hard": 35}
+_DEFAULT_MINUTES = 15
 
 
-def _estimated_minutes(reference_runtime_ms: int | None) -> int:
-    """Estimate a candidate's time budget from the reference runtime.
-
-    Args:
-        reference_runtime_ms: Measured grader runtime for the reference solution,
-            or ``None`` when the template has never been timed.
-
-    Returns:
-        Minutes, clamped to a sane band. An untimed template gets the middle of the
-        range rather than an optimistic guess, because under-estimating a question
-        reads to a candidate as the platform being wrong about its own content.
-    """
-    if reference_runtime_ms is None:
-        return 15
-    scaled = (reference_runtime_ms // 1000) // 3
-    return max(
-        _MIN_ESTIMATED_MINUTES, min(_MAX_ESTIMATED_MINUTES, scaled or _MIN_ESTIMATED_MINUTES)
-    )
+def _estimated_minutes(difficulty: str) -> int:
+    """Minutes a candidate should plan for a question of this difficulty."""
+    return _MINUTES_BY_DIFFICULTY.get(difficulty, _DEFAULT_MINUTES)
 
 
 def _to_challenge(template: QuestionTemplate, nodes: list[str]) -> ChallengeResponse:
@@ -374,7 +362,7 @@ def _to_challenge(template: QuestionTemplate, nodes: list[str]) -> ChallengeResp
         # grader's own runtime is not a human's (dividing by 3 approximates the
         # writing/thinking overhead), and an unmeasured template must not advertise
         # 40 minutes for a one-function question.
-        estimated_minutes=_estimated_minutes(template.reference_runtime_ms),
+        estimated_minutes=_estimated_minutes(template.difficulty),
         # The first path segment of the run command names the runner, not a topic,
         # so tags come from the concept nodes instead: those are the syllabus labels
         # the dashboard already groups by.
