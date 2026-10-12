@@ -35,6 +35,8 @@ __all__ = [
 
 MIN_TESTS = {"python": 6, "sql": 3, "java": 6, "react": 2}
 MAX_REFERENCE_MS = 8_000
+#: Vitest + jsdom start-up alone is ~7 s in the sandbox, so React gets a wider bound.
+MAX_REFERENCE_MS_BY_LANGUAGE = {"react": 20_000}
 MIN_VALID_MUTANTS = 3
 #: A 'wrong' solution that passes may simply be equivalent to the reference (an LLM
 #: often writes a LEFT JOIN where an INNER JOIN is identical); no test can kill it.
@@ -115,7 +117,7 @@ def run_core_gates(question: Question, sandbox: Sandbox, report: GateReport) -> 
             False,
             f"The reference solution does NOT pass your tests (status={first.status.value}). "
             f"Either the solution or the tests are wrong.\n{_failing(first)}\n"
-            f"stderr tail: {first.stderr[-500:]}",
+            f"Grader output (tail):\n{first.grader_output[-2200:]}",
         )
         return None
     if first.score.total < minimum:
@@ -126,7 +128,8 @@ def run_core_gates(question: Question, sandbox: Sandbox, report: GateReport) -> 
             "(parametrized cases count individually).",
         )
         return None
-    if first.runtime_ms > MAX_REFERENCE_MS:
+    limit = MAX_REFERENCE_MS_BY_LANGUAGE.get(question.language, MAX_REFERENCE_MS)
+    if first.runtime_ms > limit:
         report.add("reference", False, f"Reference took {first.runtime_ms} ms; too slow.")
         return None
 
@@ -171,7 +174,12 @@ def check_mutants(question: Question, sandbox: Sandbox, total: int, report: Gate
             hidden_tests=question.hidden_tests,
             run_command=question.run_command,
         )
-        if result.score.total != total:
+        if result.status in (ExecutionStatus.TIMEOUT, ExecutionStatus.RESOURCE_EXCEEDED):
+            # A correct-but-too-slow brute force is exactly the wrong solution a DSA
+            # question wants its large-input test to catch. If the whole run was ended by
+            # the sandbox, the tests did their job.
+            killed += 1
+        elif result.score.total != total:
             invalid += 1
             notes.append(
                 f"buggy solution #{index + 1} does not import/collect cleanly "

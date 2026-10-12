@@ -135,3 +135,14 @@ def test_two_survivors_are_not_tolerated(question: Question, sandbox: FakeSandbo
     sandbox.when(BUGGY[0], make_result(TOTAL))
     sandbox.when(BUGGY[1], make_result(TOTAL))
     assert not run_gates(q, sandbox, lambda: "").ok
+
+
+def test_a_too_slow_mutant_ended_by_the_sandbox_counts_as_killed(
+    question: Question, sandbox: FakeSandbox
+) -> None:
+    sandbox.when(
+        BUGGY[0], make_result(0, 0, status=ExecutionStatus.TIMEOUT, stderr="wall clock exceeded")
+    )
+    report = run_gates(question, sandbox, lambda: "")
+    assert report.metrics["mutants_killed"] == 3
+    assert report.metrics["mutants_invalid"] == 0

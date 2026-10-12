@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -121,6 +122,8 @@ class RunOutcome:
     exit_code: int | None
     runtime_ms: int
     result_document: dict[str, Any] | None
+    #: Grading-phase console output. Trusted-only; see ``ExecutionResult.grader_output``.
+    grader_output: str = ""
 
 
 class SandboxOrchestrator:
@@ -248,6 +251,7 @@ class SandboxOrchestrator:
             result = result.model_copy(
                 update={
                     "runtime_ms": outcome.runtime_ms,
+                    "grader_output": outcome.grader_output,
                     "image_digest": self.resolve_image_digest(limits.image),
                 }
             )
@@ -347,15 +351,25 @@ class SandboxOrchestrator:
                 envelope=self.envelope,
                 stream_key=stream_key,
             )
+            # The candidate sees their OWN program's output only. The grader's console
+            # output is a transcript of the hidden tests (source lines, inputs, expected
+            # values), so it travels separately and is never serialised. The one thing
+            # taken from it is a short allow-list of errors about the candidate's own
+            # code (a missing function, a syntax error), so those stay actionable.
+            grader_text = _join_streams(
+                grading.stdout, grading.stderr, self.envelope.max_stream_bytes
+            )
+            hints = _candidate_safe_errors(grader_text)
             return RunOutcome(
                 status=grading.status,
-                stdout=_join_streams(run_stdout, grading.stdout, self.envelope.max_stream_bytes),
-                stderr=_join_streams(run_stderr, grading.stderr, self.envelope.max_stream_bytes),
-                stdout_truncated=run_stdout.truncated or grading.stdout.truncated,
-                stderr_truncated=run_stderr.truncated or grading.stderr.truncated,
+                stdout=run_stdout.text,
+                stderr=_join_streams(run_stderr, hints, self.envelope.max_stream_bytes),
+                stdout_truncated=run_stdout.truncated,
+                stderr_truncated=run_stderr.truncated,
                 exit_code=grading.exit_code,
                 runtime_ms=grading.runtime_ms,
                 result_document=grading.result_document,
+                grader_output=grader_text,
             )
         finally:
             # Single-use by design: a container that has executed candidate code
@@ -502,6 +516,27 @@ def _grade(
         stderr_truncated=outcome.stderr_truncated,
         submission_id=payload.submission_id,
     )
+
+
+#: Errors about the candidate's own code that are safe to show: they name a missing or
+#: misspelled symbol or a syntax problem, never a hidden test's data.
+_SAFE_ERROR = re.compile(
+    r"^E\s+((?:ImportError|ModuleNotFoundError|SyntaxError|IndentationError|NameError"
+    r"|AttributeError|TabError)\b[^\n]{0,300})$",
+    re.M,
+)
+
+
+def _candidate_safe_errors(grader_text: str, limit: int = 3) -> str:
+    """Pick the few lines of grader output that describe a problem in the candidate's code."""
+    seen: list[str] = []
+    for match in _SAFE_ERROR.finditer(grader_text):
+        line = match.group(1).strip()
+        if line not in seen:
+            seen.append(line)
+        if len(seen) >= limit:
+            break
+    return "\n".join(seen)
 
 
 def _join_streams(first: Any, second: Any, limit: int) -> str:

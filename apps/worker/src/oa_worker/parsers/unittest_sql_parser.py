@@ -32,11 +32,12 @@ from oa_engine.platform.config import Language
 from oa_engine.platform.logging import get_logger
 from oa_worker.parsers.base import (
     _MAX_MESSAGE_CHARS,
-    _MAX_STACK_CHARS,
     _base_kwargs,
     _clean,
     _collection_error_case,
     _terminal_status,
+    candidate_message,
+    crash_text,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -155,8 +156,8 @@ class SqlUnittestParser:
                         name=nodeid.rsplit("::", maxsplit=1)[-1] or nodeid,
                         passed=outcome == "passed",
                         duration_ms=float(entry.get("duration") or 0.0),
-                        message=_clean(message, limit=_MAX_MESSAGE_CHARS),
-                        stack_trace=_clean(self._stack_from(entry), limit=_MAX_STACK_CHARS),
+                        message=_clean(candidate_message(message), limit=_MAX_MESSAGE_CHARS),
+                        stack_trace=None,
                         skipped=outcome in {"skipped", "xfailed"},
                     )
                 )
@@ -175,7 +176,9 @@ class SqlUnittestParser:
                         name="Submitted query executes",
                         passed=False,
                         duration_ms=0.0,
-                        message=_clean(detail or stderr, limit=_MAX_MESSAGE_CHARS),
+                        message=_clean(
+                            candidate_message(detail) or stderr, limit=_MAX_MESSAGE_CHARS
+                        ),
                     )
                 )
 
@@ -202,7 +205,7 @@ class SqlUnittestParser:
             if isinstance(crash, dict):
                 return str(crash.get("message") or "")
             return str(longrepr.get("message") or "")
-        return None
+        return crash_text(entry)
 
     @staticmethod
     def _stack_from(entry: dict[str, Any]) -> str | None:

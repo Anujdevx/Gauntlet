@@ -24,6 +24,7 @@ from oa_worker.parsers.base import (
     _clean,
     _collection_error_case,
     _terminal_status,
+    candidate_message,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -119,7 +120,8 @@ class VitestParser:
                         _collection_error_case(
                             test_id=f"{file_path}::{_COLLECTION_ERROR_ID}",
                             name=f"{file_path} (suite failed to run)",
-                            message=str(suite.get("message") or ""),
+                            message=candidate_message(str(suite.get("message") or ""))
+                            or "The test file could not be run.",
                             stderr=stderr,
                             exit_code=exit_code,
                         )
@@ -165,7 +167,7 @@ class VitestParser:
             name=full_title[:512],
             passed=status in _PASSING_STATUSES,
             duration_ms=float(entry.get("duration") or 0.0),
-            message=_clean(message, limit=_MAX_MESSAGE_CHARS),
+            message=_clean(candidate_message(message), limit=_MAX_MESSAGE_CHARS),
             stack_trace=None,
             skipped=status in _SKIPPED_STATUSES,
         )

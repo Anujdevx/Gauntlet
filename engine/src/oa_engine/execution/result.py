@@ -184,6 +184,11 @@ class ExecutionResult(BaseModel):
     #: showing partial output as if it were complete.
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    #: The grader's own console output (pytest's failure report, Vitest's diff...). It
+    #: contains the hidden tests' source lines, inputs and expected values, so it is
+    #: ``exclude=True``: it is never dumped, persisted, streamed or returned by the API.
+    #: Only trusted in-process callers (the question-generation gates) can read it.
+    grader_output: str = Field(default="", max_length=STREAM_MAX_CHARS, exclude=True)
     score: ScoreBreakdown = Field(default_factory=lambda: ScoreBreakdown.from_tests([]))
     exit_code: int | None = None
     language: str | None = Field(default=None, max_length=32)

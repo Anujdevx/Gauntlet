@@ -158,6 +158,94 @@ def _base_kwargs(
     }
 
 
+#: What a candidate may be told about a failing hidden test.
+#:
+#: Assertion failures are withheld: their text contains the test's expected value, its
+#: input, or its source line, so showing them lets a candidate read the tests off the
+#: result and hard-code answers. Exceptions that describe the candidate's OWN code (a
+#: missing name, a wrong type, a bad query) are shown, because that is what they need to
+#: debug. Anything else shows only its type; data-bearing messages (KeyError('secret'),
+#: ValueError('bad literal 42')) could echo a hidden input.
+ASSERTION_NOTICE = "Assertion failed. Hidden tests do not reveal expected values."
+_ASSERTION_TYPES = frozenset(
+    {"AssertionError", "AssertionFailedError", "ComparisonFailure", "MultipleFailuresError"}
+)
+_SHOWN_TYPES = frozenset(
+    {
+        "NameError",
+        "UnboundLocalError",
+        "AttributeError",
+        "TypeError",
+        "ImportError",
+        "ModuleNotFoundError",
+        "SyntaxError",
+        "IndentationError",
+        "TabError",
+        "IndexError",
+        "ZeroDivisionError",
+        "RecursionError",
+        "ReferenceError",
+        "RangeError",
+        "OperationalError",
+        "ProgrammingError",
+        "StackOverflowError",
+        "NullPointerException",
+        "ArrayIndexOutOfBoundsException",
+        "ClassCastException",
+        "ArithmeticException",
+        "NumberFormatException",
+        "ConcurrentModificationException",
+        "OutOfMemoryError",
+    }
+)
+_EXCEPTION_LINE = re.compile(
+    r"^(?:E\s+)?((?:[A-Za-z_][\w]*\.)*[A-Za-z_]\w*(?:Error|Exception))\b:?\s*(.*)$"
+)
+#: Any path into the grading directory (it holds the hidden tests).
+_GRADING_PATH = re.compile(r"\S*grading\S*")
+_TIMEOUT = re.compile(r"Timeout\s*>|timed out after|TimeoutException")
+
+
+def crash_text(entry: dict[str, Any]) -> str | None:
+    """The raw crash message of a pytest-json-report entry (``call`` or ``setup``).
+
+    pytest-json-report nests it under ``call.crash.message`` rather than a top-level
+    ``longrepr``. It is raw runner text: always pass it through :func:`candidate_message`.
+    """
+    for phase in ("call", "setup"):
+        section = entry.get(phase)
+        if isinstance(section, dict):
+            crash = section.get("crash")
+            if isinstance(crash, dict) and crash.get("message"):
+                return str(crash["message"])
+    return None
+
+
+def candidate_message(raw: str | None) -> str | None:
+    """Reduce a runner's failure text to what a candidate is allowed to see."""
+    if not raw or not raw.strip():
+        return None
+    if _TIMEOUT.search(raw):
+        return "Timed out: a test did not finish within the time limit."
+    lines = raw.splitlines()
+    # pytest marks the real error lines with "E   "; its first line of a collection error
+    # ("ImportError while importing test module '/tmp/grading/...'") would name the hidden
+    # test file, so those marked lines are considered first.
+    ordered = [ln for ln in lines if ln.startswith("E ")] + lines
+    for line in ordered:
+        match = _EXCEPTION_LINE.match(line.strip())
+        if match is None:
+            continue
+        kind = match.group(1).rsplit(".", maxsplit=1)[-1]
+        if kind in _ASSERTION_TYPES:
+            return ASSERTION_NOTICE
+        if kind in _SHOWN_TYPES:
+            text = f"{kind}: {match.group(2)}"[:300].rstrip(": ")
+            return _GRADING_PATH.sub("(hidden tests)", text)
+        return f"{kind} (details withheld)"
+    return None
+
+
 def get_parser(language: Language) -> ResultParser:
     """Return the adapter for ``language``.
 

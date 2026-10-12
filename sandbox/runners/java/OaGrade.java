@@ -82,7 +82,7 @@ public final class OaGrade {
             return 1;
         }
         Path classes = Files.createTempDirectory("oa-run-classes");
-        String errors = compile(sources, classes);
+        String errors = compile(sources, classes, workspace.resolveSibling("__none__"));
         if (errors != null) {
             System.err.print(errors);
             return 1;
@@ -109,7 +109,7 @@ public final class OaGrade {
         sources.addAll(testSources);
 
         Path classes = Files.createTempDirectory("oa-classes");
-        String compileErrors = compile(sources, classes);
+        String compileErrors = compile(sources, classes, grading);
         if (compileErrors != null) {
             write(result, "{\"tests\": [], \"collectors\": [{\"nodeid\": \"compilation\", "
                     + "\"outcome\": \"failed\", \"longrepr\": " + quote(compileErrors) + "}], "
@@ -142,7 +142,7 @@ public final class OaGrade {
     }
 
     /** Returns null on success, otherwise the compiler diagnostics. */
-    private static String compile(List<Path> sources, Path out) throws IOException {
+    private static String compile(List<Path> sources, Path out, Path hiddenDir) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) return "no system Java compiler available in the sandbox image";
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
@@ -156,9 +156,18 @@ public final class OaGrade {
         StringBuilder sb = new StringBuilder();
         for (Diagnostic<? extends JavaFileObject> d : diagnostics.getDiagnostics()) {
             if (d.getKind() != Diagnostic.Kind.ERROR) continue;
-            String file = d.getSource() == null ? "?" : Paths.get(d.getSource().getName()).getFileName().toString();
-            sb.append(file).append(':').append(d.getLineNumber()).append(": ")
-              .append(d.getMessage(Locale.ROOT)).append('\n');
+            // Errors located in the hidden tests (typically "cannot find symbol" for a method
+            // the candidate did not write) keep their message, which names the missing API,
+            // but not the test file's name or line: that would point into the hidden tests.
+            Path src = d.getSource() == null ? null : Paths.get(d.getSource().toUri());
+            boolean inTests = src != null && src.startsWith(hiddenDir);
+            if (inTests) {
+                sb.append("(hidden tests): ");
+            } else {
+                String file = src == null ? "?" : src.getFileName().toString();
+                sb.append(file).append(':').append(d.getLineNumber()).append(": ");
+            }
+            sb.append(d.getMessage(Locale.ROOT)).append('\n');
         }
         return sb.length() == 0 ? "compilation failed" : sb.toString();
     }

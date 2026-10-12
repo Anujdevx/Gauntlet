@@ -27,7 +27,13 @@ export PYTHONPATH
 # Hard cap inside the sandbox as well as outside. Belt and braces: the worker's
 # wall clock is the real guarantee, but a test suite that fans out should not
 # monopolise the box while it is being torn down.
-export PYTEST_ADDOPTS="--timeout=10 --timeout-method=thread"
+# method=signal fails ONLY the slow test (SIGALRM in the main thread) and lets the rest
+# run. method=thread, used previously, hard-exits the whole pytest process on the first
+# slow test: no result document is written, the run is reported as a platform ERROR
+# (which is not counted against the candidate), and a correct-but-too-slow solution, the
+# defining case for algorithm questions, is mistaken for a grader fault. Code stuck inside
+# a single C call cannot be interrupted by a signal; the worker's wall clock still ends it.
+export PYTEST_ADDOPTS="--timeout=10 --timeout-method=signal"
 export PYTHONDONTWRITEBYTECODE=1
 
 cd /tmp/workspace

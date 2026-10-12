@@ -19,11 +19,12 @@ from oa_engine.platform.config import Language
 from oa_engine.platform.logging import get_logger
 from oa_worker.parsers.base import (
     _MAX_MESSAGE_CHARS,
-    _MAX_STACK_CHARS,
     _base_kwargs,
     _clean,
     _collection_error_case,
     _terminal_status,
+    candidate_message,
+    crash_text,
 )
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -111,7 +112,7 @@ class PytestParser:
                         _collection_error_case(
                             test_id=_COLLECTION_ERROR_ID,
                             name=str(entry.get("nodeid") or "collection"),
-                            message=str(entry.get("longrepr") or ""),
+                            message=self._collector_message(entry),
                             stderr=stderr,
                             exit_code=exit_code,
                         )
@@ -144,6 +145,19 @@ class PytestParser:
 
     # -- internals ----------------------------------------------------------
 
+    @staticmethod
+    def _collector_message(entry: dict[str, Any]) -> str:
+        """Message for a module that failed to load or compile.
+
+        ``compilation`` entries come from the Java grader, which already limits them to
+        compiler diagnostics (hidden-test locations masked), so they are shown as is.
+        Everything else goes through the candidate-message policy.
+        """
+        raw = str(entry.get("longrepr") or "")
+        if entry.get("nodeid") == "compilation":
+            return raw[:_MAX_MESSAGE_CHARS]
+        return candidate_message(raw) or "The tests could not be loaded."
+
     def _to_case(self, entry: dict[str, Any]) -> TestCaseResult:
         """Map one pytest report entry onto a :class:`TestCaseResult`.
 
@@ -156,7 +170,6 @@ class PytestParser:
         outcome = str(entry.get("outcome") or "")
         nodeid = str(entry.get("nodeid") or entry.get("nodeId") or "pytest.unknown")
         longrepr = entry.get("longrepr")
-        stack: str | None = None
         message: str | None = None
         if isinstance(longrepr, str):
             message = longrepr
@@ -165,11 +178,11 @@ class PytestParser:
             crash = longrepr.get("reprcrash")
             if isinstance(crash, dict):
                 message = str(crash.get("message") or "")
-                crash_trace = crash.get("reprtraceback")
-                if isinstance(crash_trace, list):
-                    stack = "\n".join(str(line) for line in crash_trace)
             if not message:
                 message = str(longrepr.get("message") or "")
+
+        if not message:
+            message = crash_text(entry)
 
         params: list[str] = []
         raw_calls = entry.get("calls")
@@ -183,8 +196,9 @@ class PytestParser:
             name=nodeid.rsplit("::", maxsplit=1)[-1] or nodeid,
             passed=outcome == "passed",
             duration_ms=float(entry.get("duration") or 0.0),
-            message=_clean(message, limit=_MAX_MESSAGE_CHARS),
-            stack_trace=_clean(stack, limit=_MAX_STACK_CHARS),
+            message=_clean(candidate_message(message), limit=_MAX_MESSAGE_CHARS),
+            # Traceback frames quote the hidden test's source lines; never shown.
+            stack_trace=None,
             skipped=outcome in {"skipped", "xfailed"},
             param_ids=params[:64],
         )
