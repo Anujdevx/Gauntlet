@@ -15,6 +15,7 @@ from oa_engine.generation.drafts import (
     build_python_question,
     build_sql_question,
 )
+from oa_engine.generation.languages import resolve_language
 
 __all__ = [
     "DraftError",
@@ -25,4 +26,5 @@ __all__ = [
     "build_java_question",
     "build_python_question",
     "build_sql_question",
+    "resolve_language",
 ]

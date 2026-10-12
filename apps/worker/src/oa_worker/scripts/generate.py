@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 from oa_api.models.db import dispose_engine, session_scope
 from oa_api.models.tables import ConceptNode, QuestionTemplate
-from oa_engine.generation import Question
+from oa_engine.generation import Question, resolve_language
 from oa_engine.llm import GeminiClient, LLMError
 from oa_engine.platform.config import get_settings
 from oa_worker.generation.gates import GateReport, run_core_gates
@@ -49,9 +49,9 @@ async def _node(node_id: str) -> ConceptNode | None:
         return await session.scalar(select(ConceptNode).where(ConceptNode.id == node_id))
 
 
-async def _titles(language: str) -> list[str]:
+async def _titles(language: str, scope_node: str | None) -> list[str]:
     async with session_scope() as session:
-        return await existing_titles(session, language)
+        return await existing_titles(session, language, scope_node=scope_node)
 
 
 async def _save(outcome: Outcome) -> str | None:
@@ -104,21 +104,24 @@ def cmd_generate(args: argparse.Namespace) -> int:
     if node is None:
         _say(f"unknown concept node {args.node!r}; run `make seed` first")
         return 2
-    if node.domain not in SUPPORTED:
-        _say(f"generation supports {SUPPORTED}; {node.domain!r} is not implemented yet")
+    try:
+        language = resolve_language(node.id, args.language)
+    except ValueError as exc:
+        _say(str(exc))
         return 2
 
     llm = GeminiClient(api_key=settings.gemini_api_key, model=settings.gemini_model)
     sandbox = DockerSandbox(settings)
-    titles = _run(_titles(node.domain))
+    scope = node.domain if node.domain == "dsa" else None
+    titles = _run(_titles(language, scope))
     results: list[dict[str, Any]] = []
 
     for index in range(args.count):
-        _say(f"\n=== question {index + 1}/{args.count}: {node.id} ({args.difficulty}) ===")
+        _say(f"\n=== {index + 1}/{args.count}: {node.id} ({language}, {args.difficulty}) ===")
         outcome = generate_question(
             llm=llm,
             sandbox=sandbox,
-            language=node.domain,
+            language=language,
             node_id=node.id,
             node_label=node.label,
             node_description=node.description or "",
@@ -195,6 +198,11 @@ def main() -> int:
 
     gen = sub.add_parser("generate", help="author new questions with the LLM")
     gen.add_argument("--node", required=True, help="concept node id, e.g. sql.joins.outer")
+    gen.add_argument(
+        "--language",
+        choices=["python", "java"],
+        help="language for DSA nodes (default python); other nodes fix their own language",
+    )
     gen.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
     gen.add_argument("--count", type=int, default=1)
     gen.add_argument("--max-attempts", type=int, default=3)

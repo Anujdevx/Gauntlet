@@ -41,6 +41,8 @@ QUALITY BAR (all are checked automatically; a draft that fails any is discarded)
   wrong in a DIFFERENT realistic way (off-by-one, missed edge case, mutates input,
   wrong tie-break, wrong complexity class on large input...).
 - Do not copy a famous interview problem verbatim; ground it in a realistic scenario.
+- Write the prompt in plain Markdown. NO LaTeX or $...$ math: write `0 <= N <= 100000`,
+  `10^9` and `O(N log N)` as plain text or in backticks.
 """
 
 _PYTHON_CONTRACT = """\
@@ -65,6 +67,29 @@ PYTHON CONTRACT
 - `reference_code` and every entry of `buggy_solutions` are complete `solution.py`
   files that ALL define `entry_point` at module level and import cleanly (a wrong
   solution must be wrong in behaviour, not broken to import).
+"""
+
+_DSA_GUIDELINES = """\
+DSA GUIDELINES (an algorithms question, framed realistically)
+- The core of the task must be the named technique; the scenario is a thin, realistic
+  wrapper (logs, inventory, schedules, networks), not the point.
+- Use ONLY plain types in signatures. Python: list, dict, tuple, str, int, bool. Java:
+  int[], long, String, List<Integer>, List<List<Integer>>, Map<String, Integer>. For trees
+  and graphs use arrays, adjacency lists/dicts or edge lists. NEVER require a custom
+  node class, and never hand the solver a pre-built TreeNode or ListNode.
+- Define the exact return convention. If several valid answers can exist (a path, a
+  permutation, a set of pairs), the prompt MUST force a single answer (a tie-break rule, a
+  required order, "lexicographically smallest") or require sorted output, so every correct
+  solution returns the same value.
+- State the required time complexity in the prompt. Include exactly ONE large-input
+  test (at most 100000 elements) that a worse complexity class would not finish; an
+  O(n^2) approach on 100000 elements must fail it.
+- Cover: empty and single-element input, duplicates or ties, an all-equal input, and an
+  already-sorted and a reverse-sorted input where they matter.
+- Do not test inputs that need recursion deeper than ~900 frames unless the prompt says the
+  solution must be iterative.
+- Among your wrong solutions, include at most ONE that is correct but too slow (the
+  brute-force version); the others must be wrong in behaviour.
 """
 
 _JAVA_CONTRACT = """\
@@ -132,6 +157,7 @@ def authoring_prompt(
         f"DIFFICULTY: {difficulty}. {DIFFICULTY_GUIDE[difficulty]}",
         "",
         contract,
+        *([_DSA_GUIDELINES] if node_id.split(".", maxsplit=1)[0] == "dsa" else []),
         _QUALITY_BAR,
     ]
     if existing_titles:

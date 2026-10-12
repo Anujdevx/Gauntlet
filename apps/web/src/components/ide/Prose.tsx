@@ -1,12 +1,15 @@
 /**
  * Minimal, safe renderer for challenge prompts.
  *
- * Supports paragraphs, `- ` lists, ``` fences, `inline code` and **bold**. It
+ * Supports headings, paragraphs, `- ` and numbered lists, ``` fences, `inline code` and
+ * **bold**; stray LaTeX is flattened to plain text (see `lib/prose-parse.ts`). It
  * builds React elements only, never HTML strings, so a prompt can never inject
  * markup: React escapes every text node. A full markdown library would be a
  * dependency and a sanitiser to maintain for four constructs.
  */
 import type { ReactNode } from 'react';
+
+import { parseBlocks } from '@/lib/prose-parse';
 
 export function parseInline(text: string): ReactNode[] {
   return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((part, index) => {
@@ -31,56 +34,20 @@ export function parseInline(text: string): ReactNode[] {
   });
 }
 
-type Block =
-  | { readonly kind: 'p'; readonly text: string }
-  | { readonly kind: 'ul'; readonly items: readonly string[] }
-  | { readonly kind: 'code'; readonly text: string };
-
-export function parseBlocks(source: string): Block[] {
-  const blocks: Block[] = [];
-  const lines = source.replace(/\r\n/g, '\n').split('\n');
-  let paragraph: string[] = [];
-  let list: string[] = [];
-
-  const flush = (): void => {
-    if (paragraph.length > 0) blocks.push({ kind: 'p', text: paragraph.join(' ') });
-    if (list.length > 0) blocks.push({ kind: 'ul', items: list });
-    paragraph = [];
-    list = [];
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? '';
-    if (line.trimStart().startsWith('```')) {
-      flush();
-      const body: string[] = [];
-      i += 1;
-      while (i < lines.length && !(lines[i] ?? '').trimStart().startsWith('```')) {
-        body.push(lines[i] ?? '');
-        i += 1;
-      }
-      blocks.push({ kind: 'code', text: body.join('\n') });
-    } else if (/^\s*[-*]\s+/.test(line)) {
-      if (paragraph.length > 0) {
-        blocks.push({ kind: 'p', text: paragraph.join(' ') });
-        paragraph = [];
-      }
-      list.push(line.replace(/^\s*[-*]\s+/, ''));
-    } else if (line.trim() === '') {
-      flush();
-    } else {
-      if (list.length > 0) flush();
-      paragraph.push(line.trim());
-    }
-  }
-  flush();
-  return blocks;
-}
-
 export function Prose({ source }: { readonly source: string }): JSX.Element {
   return (
     <div className="space-y-3 text-[13.5px] leading-relaxed text-content-muted">
       {parseBlocks(source).map((block, index) => {
+        if (block.kind === 'h') {
+          return (
+            <h3
+              key={index}
+              className="pt-1 text-[11px] font-semibold uppercase tracking-wider text-content-subtle"
+            >
+              {parseInline(block.text)}
+            </h3>
+          );
+        }
         if (block.kind === 'p') return <p key={index}>{parseInline(block.text)}</p>;
         if (block.kind === 'ul') {
           return (

@@ -114,3 +114,40 @@ def test_prompts_carry_the_java_contract_and_target() -> None:
     )
     assert "JUnit 5" in prompt and "DEFAULT" in prompt
     assert "Solution.java" in blind_prompt(language="java", prompt="p", starter="s")
+
+
+# ---------------------------------------------------------------- DSA / language resolution
+
+
+def test_language_resolution() -> None:
+    from oa_engine.generation import resolve_language
+
+    assert resolve_language("sql.joins.outer") == "sql"
+    assert resolve_language("java.streams") == "java"
+    assert resolve_language("dsa.arrays.two_pointers") == "python"  # default
+    assert resolve_language("dsa.arrays.two_pointers", "java") == "java"
+    with pytest.raises(ValueError, match="cannot be authored in"):
+        resolve_language("sql.joins", "python")
+    with pytest.raises(ValueError, match="not implemented"):
+        resolve_language("rag.retrieval")
+    with pytest.raises(ValueError, match="DSA questions"):
+        resolve_language("dsa.dp.one_dimensional", "sql")
+
+
+@pytest.mark.parametrize("language", ["python", "java"])
+def test_dsa_prompt_adds_algorithmic_guidance_only_for_dsa(language: str) -> None:
+    def build(node: str) -> str:
+        return authoring_prompt(
+            language=language,
+            node_id=node,
+            node_label="n",
+            node_description="d",
+            difficulty="medium",
+            existing_titles=[],
+            feedback=None,
+        )
+
+    dsa = build("dsa.arrays.sliding_window")
+    assert "DSA GUIDELINES" in dsa
+    assert "ONE large-input" in dsa and "NEVER require a custom" in dsa
+    assert "DSA GUIDELINES" not in build("python.iterators")

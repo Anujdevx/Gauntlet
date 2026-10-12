@@ -27,13 +27,23 @@ def _lineage(node_id: str) -> list[str]:
     return [".".join(parts[: i + 1]) for i in range(len(parts))]
 
 
-async def existing_titles(session: AsyncSession, language: str) -> list[str]:
-    rows = await session.scalars(
-        select(QuestionTemplate.title).where(
-            QuestionTemplate.language == language, QuestionTemplate.is_active.is_(True)
-        )
-    )
-    return list(rows)
+async def existing_titles(
+    session: AsyncSession, language: str, *, scope_node: str | None = None
+) -> list[str]:
+    """Titles already in the bank, so the model does not repeat an idea.
+
+    Scoped to ``scope_node`` (and everything linked under it) when given, otherwise to
+    the language. DSA uses the former: a Python and a Java two-pointer question are the
+    same idea, so both count as "already covered".
+    """
+    stmt = select(QuestionTemplate.title).where(QuestionTemplate.is_active.is_(True))
+    if scope_node is None:
+        stmt = stmt.where(QuestionTemplate.language == language)
+    else:
+        stmt = stmt.join(
+            QuestionTemplateNode, QuestionTemplateNode.template_id == QuestionTemplate.id
+        ).where(QuestionTemplateNode.node_id == scope_node)
+    return list((await session.scalars(stmt.distinct())).all())
 
 
 async def save_question(

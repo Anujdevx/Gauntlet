@@ -83,6 +83,106 @@ NODES: list[tuple[str, str, str]] = [
         "Classes, interfaces, immutability, equals and hashCode.",
     ),
     ("java.exceptions", "Exceptions", "Checked and unchecked exceptions, custom types."),
+    # -- DSA ---------------------------------------------------------------
+    # Language-agnostic: a DSA node can be assessed in Python or Java. The node id says
+    # *what* is tested; the question's language says *how*. Leaf descriptions are used
+    # verbatim in the question-authoring prompt, so they name the technique precisely.
+    ("dsa", "Data Structures & Algorithms", "Core algorithmic problem solving."),
+    ("dsa.arrays", "Arrays", "Working over sequences stored contiguously."),
+    (
+        "dsa.arrays.two_pointers",
+        "Two pointers",
+        "Converging or same-direction pointers over a sorted or partitioned sequence.",
+    ),
+    (
+        "dsa.arrays.sliding_window",
+        "Sliding window",
+        "A moving window over a sequence maintaining a running invariant in O(n).",
+    ),
+    (
+        "dsa.arrays.prefix_sums",
+        "Prefix sums",
+        "Precomputed running totals answering range queries in O(1).",
+    ),
+    ("dsa.hashing", "Hashing", "Hash maps and sets for constant-time lookup."),
+    (
+        "dsa.hashing.frequency",
+        "Frequency counting",
+        "Counting occurrences with a map, then reasoning over the counts.",
+    ),
+    (
+        "dsa.hashing.lookup",
+        "Complement lookup",
+        "Finding pairs or groups via hash lookup instead of nested loops.",
+    ),
+    ("dsa.strings", "Strings", "Algorithms over character sequences."),
+    (
+        "dsa.strings.manipulation",
+        "String manipulation",
+        "Scanning, transforming and validating strings with index or pointer logic.",
+    ),
+    ("dsa.stacks_queues", "Stacks & queues", "LIFO and FIFO structures."),
+    (
+        "dsa.stacks_queues.stack",
+        "Stack matching",
+        "Using a stack to match, nest or evaluate sequences.",
+    ),
+    (
+        "dsa.stacks_queues.monotonic",
+        "Monotonic stack",
+        "A stack kept sorted to find next-greater or previous-smaller elements in O(n).",
+    ),
+    ("dsa.sorting_searching", "Sorting & searching", "Ordering data and finding values fast."),
+    (
+        "dsa.sorting_searching.binary_search",
+        "Binary search",
+        "Halving a sorted or monotonic search space, including search on the answer.",
+    ),
+    (
+        "dsa.sorting_searching.intervals",
+        "Intervals",
+        "Sorting and merging, overlapping or scheduling ranges.",
+    ),
+    ("dsa.heaps", "Heaps", "Priority queues for repeated min or max access."),
+    (
+        "dsa.heaps.top_k",
+        "Top-k selection",
+        "Selecting the k best items with a bounded heap instead of a full sort.",
+    ),
+    ("dsa.trees", "Trees", "Hierarchical data and recursion over it."),
+    (
+        "dsa.trees.traversal",
+        "Tree traversal",
+        "Depth-first and breadth-first traversal of a tree given as plain arrays or maps.",
+    ),
+    ("dsa.graphs", "Graphs", "Nodes and edges, given as adjacency lists or edge lists."),
+    (
+        "dsa.graphs.traversal",
+        "Graph traversal",
+        "BFS and DFS: reachability, connected components, shortest hops, cycle detection.",
+    ),
+    (
+        "dsa.graphs.topological",
+        "Topological order",
+        "Ordering a dependency graph; detecting impossible orderings.",
+    ),
+    ("dsa.recursion", "Recursion & backtracking", "Exploring a decision space systematically."),
+    (
+        "dsa.recursion.backtracking",
+        "Backtracking",
+        "Generating permutations, subsets or constrained combinations with pruning.",
+    ),
+    ("dsa.dp", "Dynamic programming", "Optimal substructure and overlapping subproblems."),
+    (
+        "dsa.dp.one_dimensional",
+        "1-D dynamic programming",
+        "A single-index recurrence: climbing, house-robber, coin-change style problems.",
+    ),
+    (
+        "dsa.dp.two_dimensional",
+        "2-D dynamic programming",
+        "Grid or two-sequence recurrences: paths, edit distance, subsequences, knapsack.",
+    ),
 ]
 
 
