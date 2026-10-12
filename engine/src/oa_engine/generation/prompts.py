@@ -44,6 +44,8 @@ QUALITY BAR (all are checked automatically; a draft that fails any is discarded)
 - A separate engineer will solve your question seeing ONLY the prompt and starter
   code. If they could reasonably return a different answer than your tests expect,
   the question is rejected.
+- Supply 5 wrong solutions (never fewer than 4); one of them may turn out to be
+  equivalent to the reference, and the rest must still be enough to prove the tests work.
 - Every wrong solution you supply must fail at least one test, and each must be
   wrong in a DIFFERENT realistic way (off-by-one, missed edge case, mutates input,
   wrong tie-break, wrong complexity class on large input...).
@@ -97,6 +99,14 @@ DSA GUIDELINES (an algorithms question, framed realistically)
   solution must be iterative.
 - Among your wrong solutions, include at most ONE that is correct but too slow (the
   brute-force version); the others must be wrong in behaviour.
+- A solution that returns the right answers by a DIFFERENT METHOD is not a wrong
+  solution and tests cannot tell it apart: for example sorting the whole list when the
+  skill is a heap, or an O(n log n) sort when the skill is a linear scan. Do not include
+  such solutions as wrong ones; if the technique cannot be observed from outputs, test
+  correctness (and, where it matters, the large-input bound) rather than the method.
+- The reference solution must be ITERATIVE (no recursion) whenever any test, including the
+  large one, has depth above ~500 (long chains, deep trees, long linked structures):
+  Python's recursion limit is about 1000 frames.
 """
 
 _JAVA_CONTRACT = """\
