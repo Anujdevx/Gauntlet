@@ -123,6 +123,7 @@ def generate_question(
     difficulty: str,
     existing_titles: list[str],
     max_attempts: int = 3,
+    hint: str | None = None,
     blind_runs: int = 2,
     blind_required: int = 1,
     on_progress: Callable[[str], None] = lambda _msg: None,
@@ -152,6 +153,7 @@ def generate_question(
             difficulty=difficulty,
             existing_titles=existing_titles,
             feedback=feedback,
+            hint=hint,
         )
         try:
             draft = llm.generate(system=SYSTEM, prompt=prompt, schema=schema, temperature=0.8)

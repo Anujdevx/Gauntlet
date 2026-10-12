@@ -128,6 +128,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
             difficulty=args.difficulty,
             existing_titles=titles,
             max_attempts=args.max_attempts,
+            hint=args.hint,
             blind_runs=args.blind_runs,
             blind_required=args.blind_required,
             on_progress=_say,
@@ -269,6 +270,7 @@ def main() -> int:
     gen.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
     gen.add_argument("--count", type=int, default=1)
     gen.add_argument("--max-attempts", type=int, default=3)
+    gen.add_argument("--hint", help="extra steer appended to the authoring prompt")
     gen.add_argument("--blind-runs", type=int, default=2)
     gen.add_argument("--blind-required", type=int, default=1)
     gen.add_argument("--dry-run", action="store_true", help="validate but do not save")

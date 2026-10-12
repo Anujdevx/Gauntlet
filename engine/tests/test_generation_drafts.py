@@ -227,3 +227,23 @@ def test_sql_starter_fails_even_scenarios_that_expect_no_rows() -> None:
     q = build_sql_question(sql_draft(), difficulty="easy")
     starter = q.starter_files["solution.sql"]
     assert "SELECT 'replace me'" in starter  # returns a row, so it never equals []
+
+
+@pytest.mark.parametrize(
+    "ramble",
+    [
+        "Return the top values. Let's specify the exact tie-break convention here.",
+        "Sort by value, or simply ensure a stable order that is deterministic overall.",
+        "Return the count. Wait, actually, return the maximum instead.",
+        "Ties resolve by arrival (or any consistent stable order) for determinism.",
+    ],
+)
+def test_prompts_that_deliberate_aloud_are_rejected(ramble: str) -> None:
+    clean = py_draft().prompt
+    with pytest.raises(DraftError) as caught:
+        build_python_question(py_draft(prompt=clean + " " + ramble), difficulty="easy")
+    assert "visible deliberation" in " ".join(caught.value.problems)
+
+
+def test_a_clean_prompt_is_not_flagged() -> None:
+    build_python_question(py_draft(), difficulty="easy")  # does not raise

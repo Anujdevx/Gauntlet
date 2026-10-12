@@ -164,6 +164,7 @@ def authoring_prompt(
     difficulty: str,
     existing_titles: list[str],
     feedback: str | None,
+    hint: str | None = None,
 ) -> str:
     """Build the user prompt for one authoring attempt."""
     contract = {"python": _PYTHON_CONTRACT, "sql": _SQL_CONTRACT, "java": _JAVA_CONTRACT}[language]
@@ -177,6 +178,8 @@ def authoring_prompt(
         *([_DSA_GUIDELINES] if node_id.split(".", maxsplit=1)[0] == "dsa" else []),
         _QUALITY_BAR,
     ]
+    if hint:
+        parts += [f"AUTHOR'S NOTE (follow it; it overrides the defaults above): {hint}", ""]
     if existing_titles:
         parts += [
             "ALREADY IN THE BANK (do not repeat these ideas or scenarios):",

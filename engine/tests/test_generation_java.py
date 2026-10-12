@@ -151,3 +151,20 @@ def test_dsa_prompt_adds_algorithmic_guidance_only_for_dsa(language: str) -> Non
     assert "DSA GUIDELINES" in dsa
     assert "ONE large-input" in dsa and "NEVER require a custom" in dsa
     assert "DSA GUIDELINES" not in build("python.iterators")
+
+
+def test_an_authors_note_reaches_the_prompt_only_when_given() -> None:
+    def build(hint: str | None) -> str:
+        return authoring_prompt(
+            language="python",
+            node_id="dsa.heaps.top_k",
+            node_label="Top-k",
+            node_description="d",
+            difficulty="easy",
+            existing_titles=[],
+            feedback=None,
+            hint=hint,
+        )
+
+    assert "AUTHOR'S NOTE" not in build(None)
+    assert "make the heap observable" in build("make the heap observable")

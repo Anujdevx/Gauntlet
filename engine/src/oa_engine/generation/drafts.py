@@ -72,6 +72,24 @@ SQL_STARTER = "-- Replace the placeholder below with your query.\nSELECT 'replac
 MIN_DISTINCT_RESULTS = 2
 
 
+#: Phrases that show the model deliberating inside the specification it is writing. They
+#: read as confusion to a candidate and usually accompany a contradictory or redundant rule.
+_DELIBERATION = re.compile(
+    r"\b(let'?s (?:specify|define|say|assume|clarify|decide)|let me\b|wait,|actually,|"
+    r"or simply|or any (?:consistent|other)|hmm\b|i think\b|on second thought)",
+    re.I,
+)
+
+
+def _check_prompt_prose(prompt: str, problems: list[str]) -> None:
+    match = _DELIBERATION.search(prompt)
+    if match:
+        problems.append(
+            f"prompt: contains visible deliberation ('{match.group(0)}'). Write only the final, "
+            "unambiguous specification, with a single rule for anything that needs one."
+        )
+
+
 class DraftError(ValueError):
     """The draft violates a rule. ``problems`` is meant to be shown to the model."""
 
@@ -267,6 +285,7 @@ def build_python_question(draft: PythonDraft, *, difficulty: str) -> Question:
         DraftError: With every problem found.
     """
     problems: list[str] = []
+    _check_prompt_prose(draft.prompt, problems)
 
     starter = _check_python_source("starter_code", draft.starter_code, problems)
     reference = _check_python_source("reference_code", draft.reference_code, problems)
@@ -377,6 +396,7 @@ def build_java_question(draft: JavaDraft, *, difficulty: str) -> Question:
         DraftError: With every problem found.
     """
     problems: list[str] = []
+    _check_prompt_prose(draft.prompt, problems)
     files = {
         "starter_code": draft.starter_code,
         "reference_code": draft.reference_code,
@@ -501,6 +521,7 @@ def build_sql_question(draft: SqlDraft, *, difficulty: str) -> Question:
         DraftError: With every problem found.
     """
     problems: list[str] = []
+    _check_prompt_prose(draft.prompt, problems)
 
     for i, statement in enumerate(draft.ddl):
         if not _DDL.match(statement) or not _single_statement(statement):
